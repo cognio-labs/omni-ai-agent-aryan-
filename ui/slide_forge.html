@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlideForge — AI Presentation Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'Poppins', sans-serif;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+    }
+    .slide-transition {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-[#e2e8f0] h-screen flex overflow-hidden">
+
+  <!-- Left Sidebar: Slides Thumbnails -->
+  <aside class="w-64 bg-[#0f172a] border-r border-[#1e293b] flex flex-col h-full shrink-0">
+    <div class="p-5 border-b border-[#1e293b] flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <i class="fas fa-layer-group text-[#22d3ee] text-lg"></i>
+        <h2 class="font-extrabold uppercase text-xs tracking-wider text-slate-300">Presentation Deck</h2>
+      </div>
+      <span class="bg-[#22d3ee]/20 text-[#22d3ee] text-xs px-2.5 py-0.5 rounded-full font-bold">10 Slides</span>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scroll" id="thumbnails-container">
+      <!-- Dynamic Thumbnails Rendered by JS -->
+    </div>
+  </aside>
+
+  <!-- Central Main Content Panel -->
+  <main class="flex-1 flex flex-col h-full min-w-0 bg-[#070b13]">
+    
+    <!-- Top Action Header -->
+    <header class="h-16 border-b border-[#1e293b] bg-[#0f172a] px-6 flex justify-between items-center shrink-0">
+      <div class="flex items-center space-x-4">
+        <span class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Active Template:</span>
+        <select id="templateSelector" onchange="changeTemplate(this.value)" class="bg-[#1e293b] border border-[#334155] text-white px-3 py-1.5 rounded-lg text-xs focus:outline-none focus:border-[#22d3ee] font-medium cursor-pointer">
+          <option value="bold-blue">Bold Blue (Default)</option>
+          <option value="graphite-cyan">Graphite Cyan</option>
+          <option value="aqua-breeze">Aqua Breeze</option>
+          <option value="emerald-edge">Emerald Edge</option>
+          <option value="sandy-rhythm">Sandy Rhythm</option>
+          <option value="freestyle">Freestyle</option>
+        </select>
+      </div>
+      <div class="flex space-x-3">
+        <button onclick="triggerExport('pptx')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center space-x-2 transition shadow-lg shadow-blue-900/30">
+          <i class="fas fa-file-powerpoint"></i>
+          <span>Download PPT</span>
+        </button>
+        <button onclick="triggerExport('pdf')" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center space-x-2 transition">
+          <i class="fas fa-file-pdf"></i>
+          <span>Print PDF</span>
+        </button>
+        <button onclick="triggerExport('html')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center space-x-2 transition shadow-lg shadow-emerald-950/20">
+          <i class="fas fa-code"></i>
+          <span>Get HTML</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+      
+      <!-- Live Preview Area -->
+      <section class="flex-1 flex flex-col p-8 items-center justify-center relative overflow-hidden bg-[#070b13]">
+        <div class="relative w-full aspect-[16/9] max-w-4xl rounded-2xl shadow-2xl flex flex-col justify-between p-12 overflow-hidden border border-white/5 slide-transition" id="preview-slide">
+          
+          <!-- Slide Inner Container -->
+          <div class="flex justify-between items-start z-10">
+            <span class="text-xs uppercase tracking-widest font-bold" id="slide-pre-number">SLIDE 01</span>
+            <i class="fas fa-rocket text-xl" id="slide-pre-icon"></i>
+          </div>
+          <div class="my-auto z-10">
+            <h3 class="text-4xl font-extrabold uppercase mb-6 leading-tight" id="slide-pre-title">DIGITAL MARKETING STRATEGY FOR SAAS</h3>
+            <div class="text-lg space-y-3 font-medium opacity-90" id="slide-pre-content">
+              <!-- Content Filled Dynamically -->
+            </div>
+          </div>
+          <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden z-10">
+            <div class="h-full bg-white transition-all duration-300" style="width: 10%" id="slide-pre-bar"></div>
+          </div>
+          
+          <!-- Decorative Background Elements -->
+          <div id="slide-bg-shape-1" class="absolute -top-12 -right-12 w-64 h-64 rounded-full bg-white/5 blur-3xl z-0"></div>
+          <div id="slide-bg-shape-2" class="absolute -bottom-12 -left-12 w-64 h-64 rounded-full bg-white/5 blur-3xl z-0"></div>
+        </div>
+      </section>
+
+      <!-- Sidebar Chat Panel -->
+      <section class="w-96 bg-[#0f172a] border-l border-[#1e293b] flex flex-col h-full shrink-0">
+        <!-- Panel Title -->
+        <div class="p-4 border-b border-[#1e293b] flex items-center justify-between bg-[#131d31]">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="font-bold text-xs tracking-wider uppercase text-slate-300">SlideForge Assistant</span>
+          </div>
+          <i class="fas fa-cog text-slate-400 hover:text-white cursor-pointer transition"></i>
+        </div>
+        
+        <!-- Chat History -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll bg-[#0b0f19]/30" id="chat-messages">
+          <div class="flex items-start space-x-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shrink-0 shadow-lg"><i class="fas fa-robot text-slate-900 text-xs"></i></div>
+            <div class="bg-[#1e293b] border border-[#334155] p-3.5 rounded-2xl rounded-tl-none max-w-[85%] text-xs leading-relaxed text-slate-200 shadow-md">
+              <span class="font-bold text-cyan-400 block mb-1">SlideForge AI v3.0</span>
+              Hello! I've loaded your <strong>Digital Marketing Strategy for SaaS</strong> presentation. Use the template selector to dynamically swap styling, or write commands to edit slides or generate n8n actions.
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form onsubmit="handleSend(event)" class="p-4 border-t border-[#1e293b] flex space-x-2 bg-[#0f172a] items-center">
+          <button type="button" class="w-9 h-9 rounded-xl border border-[#334155] text-slate-400 hover:text-white flex items-center justify-center hover:bg-[#1e293b] transition shrink-0">
+            <i class="fas fa-paperclip"></i>
+          </button>
+          <input type="text" id="userInput" placeholder="Ask me to rewrite slide 3 or add data metrics..." class="flex-1 bg-[#1e293b] border border-[#334155] text-white px-4 py-2 rounded-xl text-xs focus:outline-none focus:border-[#22d3ee] transition">
+          <button type="submit" class="bg-[#22d3ee] hover:bg-cyan-400 text-slate-900 w-9 h-9 rounded-xl flex items-center justify-center transition shrink-0 shadow-lg shadow-cyan-900/20">
+            <i class="fas fa-paper-plane text-sm"></i>
+          </button>
+        </form>
+      </section>
+
+    </div>
+  </main>
+
+  <script>
+    // Templates configuration
+    const templates = {
+      'bold-blue': {
+        background: 'bg-gradient-to-br from-[#2563EB] to-[#06B6D4]',
+        accent: 'text-white',
+        text: 'text-white',
+        bar: 'bg-white',
+        shapes: 'bg-white/5',
+        icon: 'text-white/80'
+      },
+      'graphite-cyan': {
+        background: 'bg-gradient-to-br from-[#111827] to-[#1F2937]',
+        accent: 'text-[#22D3EE]',
+        text: 'text-[#F9FAFB]',
+        bar: 'bg-[#22D3EE]',
+        shapes: 'bg-[#22D3EE]/5',
+        icon: 'text-[#22D3EE]/80'
+      },
+      'aqua-breeze': {
+        background: 'bg-gradient-to-br from-[#E0F2FE] to-[#FFFFFF]',
+        accent: 'text-[#14B8A6]',
+        text: 'text-[#0F172A]',
+        bar: 'bg-[#14B8A6]',
+        shapes: 'bg-[#14B8A6]/10',
+        icon: 'text-[#14B8A6]/80'
+      },
+      'emerald-edge': {
+        background: 'bg-gradient-to-br from-[#FFFFFF] to-[#F0FDF4]',
+        accent: 'text-[#10B981]',
+        text: 'text-[#1F2937]',
+        bar: 'bg-[#10B981]',
+        shapes: 'bg-[#10B981]/10',
+        icon: 'text-[#10B981]/80'
+      },
+      'sandy-rhythm': {
+        background: 'bg-gradient-to-br from-[#FAF5FF] to-[#FEF3C7]',
+        accent: 'text-[#8B4513]',
+        text: 'text-[#2D2A26]',
+        bar: 'bg-[#8B4513]',
+        shapes: 'bg-[#8B4513]/10',
+        icon: 'text-[#8B4513]/80'
+      },
+      'freestyle': {
+        background: 'bg-gradient-to-br from-[#E0E7FF] to-[#F3E8FF]',
+        accent: 'text-[#6366F1]',
+        text: 'text-[#1E293B]',
+        bar: 'bg-[#6366F1]',
+        shapes: 'bg-[#6366F1]/10',
+        icon: 'text-[#6366F1]/80'
+      }
+    };
+
+    let activeTheme = 'bold-blue';
+
+    const slidesData = [
+      { number: "SLIDE 01", icon: "fa-rocket", title: "DIGITAL MARKETING STRATEGY FOR SAAS", content: ["Accelerate customer acquisition loops.", "Focus on bottom-of-funnel keyword authority.", "Drive conversion rate optimizations."] },
+      { number: "SLIDE 02", icon: "fa-list-ol", title: "STRATEGY OVERVIEW", content: ["Segment Ideal Customer Profiles.", "Build authority in SEO structures.", "Scale paid search and dynamic retargeting."] },
+      { number: "SLIDE 03", icon: "fa-users-cog", title: "AUDIENCE POSITIONING & ICP", content: ["VP Marketing and product decision makers.", "Target B2B mid-market segmentations ($10M-$50M ARR).", "Focus on integration speed-to-market benefits."] },
+      { number: "SLIDE 04", icon: "fa-search", title: "SEO TOPICAL PILLARS", content: ["Target transactional buyer keywords.", "Structure clear hub-and-spoke document architectures.", "Embed sandbox demos inside blogs."] },
+      { number: "SLIDE 05", icon: "fa-ad", title: "PAID MARKETING & ABM", content: ["Run search ads targeting competitor keyword terms.", "Distribute case studies showing financial ROI.", "Scale LinkedIn custom accounts campaigns."] },
+      { number: "SLIDE 06", icon: "fa-sync-alt", title: "PRODUCT-LED LOOPS", content: ["Shorten onboarding paths to Aha! moments.", "Integrate platform team-invite referral triggers.", "Tie license values directly to user usage bounds."] },
+      { number: "SLIDE 07", icon: "fa-filter", title: "CONVERSION FLOW CRO", content: ["A/B test homepage titles and CTAs.", "Limit initial user form field inputs.", "Insert interactive product playground interfaces."] },
+      { number: "SLIDE 08", icon: "fa-chart-line", title: "SaaS GROWTH METRICS", content: ["LTV to CAC target ratios > 3.0 : 1", "NRR expansion benchmarks > 105%", "Monthly logo churn caps < 3.0%"] },
+      { number: "SLIDE 09", icon: "fa-map-marked-alt", title: "12-MONTH STRATEGY MAP", content: ["Q1: Analytics alignment and CRO setups.", "Q2: SEO knowledge hub rollouts.", "Q3 & Q4: Viral PLG channel scale."] },
+      { number: "SLIDE 10", icon: "fa-handshake", title: "LET'S BUILD YOUR MARKETING ENGINE", content: ["Website: saasgrowth.com/consult", "Email: partner@saasgrowth.com", "Phone: 1-800-GROWTH-NOW"] }
+    ];
+
+    let currentSlide = 0;
+
+    function renderThumbnails() {
+      const container = document.getElementById('thumbnails-container');
+      container.innerHTML = '';
+      slidesData.forEach((slide, index) => {
+        const isActive = index === currentSlide;
+        const borderClass = isActive ? 'border-[#22d3ee] bg-[#1e293b]' : 'border-[#1e293b] hover:bg-[#1e293b]/50';
+        const item = document.createElement('div');
+        item.className = `p-3 rounded-xl border ${borderClass} cursor-pointer transition-all duration-200`;
+        item.onclick = () => selectSlide(index);
+        item.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[9px] uppercase tracking-wider font-extrabold text-[#22d3ee]">${slide.number}</span>
+            <i class="fas ${slide.icon} text-[10px] text-slate-400"></i>
+          </div>
+          <div class="text-xs truncate font-bold text-slate-200">${slide.title}</div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function selectSlide(index) {
+      currentSlide = index;
+      const slide = slidesData[index];
+      
+      // Update UI Text elements
+      document.getElementById('slide-pre-number').innerText = slide.number;
+      document.getElementById('slide-pre-title').innerText = slide.title;
+      
+      const contentList = document.getElementById('slide-pre-content');
+      contentList.innerHTML = '';
+      slide.content.forEach(bullet => {
+        contentList.innerHTML += `<p>• ${bullet}</p>`;
+      });
+
+      // Update progress bar
+      document.getElementById('slide-pre-bar').style.width = `${((index + 1) / slidesData.length) * 100}%`;
+      
+      // Keep selected icon updated
+      const iconEl = document.getElementById('slide-pre-icon');
+      iconEl.className = `fas ${slide.icon} text-xl`;
+      
+      applyActiveTemplateStyles();
+      renderThumbnails();
+    }
+
+    function changeTemplate(value) {
+      activeTheme = value;
+      applyActiveTemplateStyles();
+    }
+
+    function applyActiveTemplateStyles() {
+      const style = templates[activeTheme];
+      const preview = document.getElementById('preview-slide');
+      
+      // Clean previous styles
+      preview.className = `relative w-full aspect-[16/9] max-w-4xl rounded-2xl shadow-2xl flex flex-col justify-between p-12 overflow-hidden border border-white/5 slide-transition ${style.background}`;
+      
+      // Text and Title element classes
+      const title = document.getElementById('slide-pre-title');
+      title.className = `text-4xl font-extrabold uppercase mb-6 leading-tight ${style.text}`;
+      
+      const bullets = document.getElementById('slide-pre-content');
+      bullets.className = `text-lg space-y-3 font-medium ${style.text} opacity-90`;
+      
+      const sNumber = document.getElementById('slide-pre-number');
+      sNumber.className = `text-xs uppercase tracking-widest font-bold ${style.accent}`;
+      
+      const sIcon = document.getElementById('slide-pre-icon');
+      sIcon.className = `fas ${slidesData[currentSlide].icon} text-xl ${style.accent}`;
+      
+      const progressBar = document.getElementById('slide-pre-bar');
+      progressBar.className = `h-full transition-all duration-300 ${style.bar}`;
+
+      const shape1 = document.getElementById('slide-bg-shape-1');
+      shape1.className = `absolute -top-12 -right-12 w-64 h-64 rounded-full blur-3xl z-0 ${style.shapes}`;
+
+      const shape2 = document.getElementById('slide-bg-shape-2');
+      shape2.className = `absolute -bottom-12 -left-12 w-64 h-64 rounded-full blur-3xl z-0 ${style.shapes}`;
+    }
+
+    function handleSend(e) {
+      e.preventDefault();
+      const input = document.getElementById('userInput');
+      const val = input.value.trim();
+      if (!val) return;
+
+      appendMessage(val, true);
+      input.value = '';
+
+      // Typing Indicator
+      const typingId = showTyping();
+
+      // Simulate Assistant Response
+      setTimeout(() => {
+        removeTyping(typingId);
+        let reply = '';
+        if (val.toLowerCase().includes('roadmap') || val.toLowerCase().includes('roadmap')) {
+          reply = "Navigating to slide 9 (Roadmap). I can dynamically adapt your metrics inside this slide structure.";
+          selectSlide(8);
+        } else if (val.toLowerCase().includes('blue') || val.toLowerCase().includes('cyan')) {
+          reply = "Swapping theme to Graphite Cyan for matching sleek, monospace design aesthetics.";
+          document.getElementById('templateSelector').value = 'graphite-cyan';
+          changeTemplate('graphite-cyan');
+        } else {
+          reply = "Generating slide update elements for your custom deck content. Slide outline has been refreshed.";
+          selectSlide((currentSlide + 1) % slidesData.length);
+        }
+        appendMessage(reply, false);
+      }, 1000);
+    }
+
+    function appendMessage(text, isUser) {
+      const chatContainer = document.getElementById('chat-messages');
+      const div = document.createElement('div');
+      div.className = `flex items-start space-x-3 ${isUser ? 'justify-end' : ''}`;
+      
+      const avatar = isUser ? '' : `<div class="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shrink-0 shadow-lg"><i class="fas fa-robot text-slate-900 text-xs"></i></div>`;
+      const bg = isUser ? 'bg-[#22d3ee] text-slate-900' : 'bg-[#1e293b] border border-[#334155] text-slate-200';
+      const round = isUser ? 'rounded-tr-none' : 'rounded-tl-none';
+
+      div.innerHTML = `
+        ${avatar}
+        <div class="${bg} ${round} p-3 rounded-2xl max-w-[85%] text-xs leading-relaxed shadow-sm font-medium">
+          ${text}
+        </div>
+      `;
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function showTyping() {
+      const chatContainer = document.getElementById('chat-messages');
+      const id = 'typing-' + Date.now();
+      const div = document.createElement('div');
+      div.id = id;
+      div.className = 'flex items-start space-x-3';
+      div.innerHTML = `
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center shrink-0 shadow-lg"><i class="fas fa-robot text-slate-900 text-xs"></i></div>
+        <div class="bg-[#1e293b] border border-[#334155] p-3 rounded-2xl rounded-tl-none text-slate-400 text-xs flex items-center space-x-1 shadow-sm">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style="animation-delay: 0.2s"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce" style="animation-delay: 0.4s"></span>
+        </div>
+      `;
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return id;
+    }
+
+    function removeTyping(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    function triggerExport(format) {
+      alert(`SlideForge Pipeline: Exporting presentation to file format: ${format.toUpperCase()}`);
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') {
+        if (currentSlide < slidesData.length - 1) selectSlide(currentSlide + 1);
+      }
+      if (e.key === 'ArrowLeft') {
+        if (currentSlide > 0) selectSlide(currentSlide - 1);
+      }
+    });
+
+    // Initialize first slide preview
+    selectSlide(0);
+  </script>
+</body>
+</html>

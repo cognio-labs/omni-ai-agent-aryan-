@@ -1,0 +1,133 @@
+{
+  "name": "Automated PPTX Slides Creator Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "contact-form",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "e6727284-60e0-407b-8321-cc51db4d6824",
+      "name": "Website Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {},
+        "messages": {
+          "messageValues": [
+            {
+              "message": "System Prompt: You are SlideForge, an expert Presentation designer. You take user inputs and generate structured slides.\n\nGenerate structured data for a 10-slide deck based on this user details:\nStartup Topic: {{ $json.body.topic }}\nIndustry: {{ $json.body.industry }}\nTarget Audience: {{ $json.body.audience }}\n\nFormat the response strictly as valid JSON containing an array of slide objects. Each object must have fields: 'slideNumber', 'title', 'bullets' (array of strings), 'speakerNotes'."
+            }
+          ]
+        }
+      },
+      "id": "e0bfa912-70b1-40ef-bcbb-ef7a151b72e1",
+      "name": "OpenAI: Generate Slide Content",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.4,
+      "position": [470, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CRED_ID"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "cat << 'EOF' > generate_presentation.py\nfrom pptx import Presentation\nfrom pptx.util import Inches, Pt\nfrom pptx.dml.color import RGBColor\nfrom pptx.enum.text import PP_ALIGN\n\nprs = Presentation()\nprs.slide_width = Inches(13.333)\nprs.slide_height = Inches(7.5)\n\n# Configure elements from JSON output\nslides_data = {{ JSON.stringify($json.choices[0].message.content) }}\n\n# Render pptx process loop\nfor slide_data in slides_data:\n    slide = prs.slides.add_slide(prs.slide_layouts[6])\n    # Add slide rendering logic based on template\n\nprs.save('dynamic_generated_presentation.pptx')\nEOF\npython generate_presentation.py"
+      },
+      "id": "e89c623a-f112-4ebc-b3a1-efc8f391c0b3",
+      "name": "Execute Command: Run PPTX Script",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "filePath": "dynamic_generated_presentation.pptx",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "f29b47e4-2394-469b-bcfa-dfd38a2e1d74",
+      "name": "Read Binary File: Fetch PPTX",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [910, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "{{ $('Website Form Webhook').item.json.body.email }}",
+        "subject": "Your Custom Generated Slide Deck",
+        "message": "Hi, please find your custom generated marketing slide deck attached.",
+        "attachments": "data",
+        "options": {}
+      },
+      "id": "902dcb67-ea21-419b-a0ee-7c6dfcf301df",
+      "name": "Send Email: Send Presentation",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1130, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CRED_ID"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Website Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Generate Slide Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: Generate Slide Content": {
+      "main": [
+        [
+          {
+            "node": "Execute Command: Run PPTX Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command: Run PPTX Script": {
+      "main": [
+        [
+          {
+            "node": "Read Binary File: Fetch PPTX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Binary File: Fetch PPTX": {
+      "main": [
+        [
+          {
+            "node": "Send Email: Send Presentation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}
