@@ -1,7 +1,7 @@
 """
 search.py — Deep multi-step web search module for OmniClient.
 
-Uses the duckduckgo-search library (no API key required).
+Uses DuckDuckGo search pages through httpx (no API key required).
 Implements multi-step aggregation:
   1. Initial search
   2. Extract sub-topics from snippets
@@ -11,9 +11,9 @@ Implements multi-step aggregation:
 """
 from __future__ import annotations
 
+import html
 import json
 import re
-import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
@@ -116,23 +116,73 @@ def format_search_for_context(search_result: Dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _ddg_search(query: str, max_results: int = 5) -> List[Dict]:
-    """Run a DuckDuckGo text search and normalise results."""
+    """Run a DuckDuckGo text search through httpx and normalise results."""
     try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            raw = list(ddgs.text(query, max_results=max_results))
-        results = []
-        for r in raw:
-            results.append({
-                "title": r.get("title", ""),
-                "url": r.get("href", ""),
-                "snippet": r.get("body", ""),
-                "source": _extract_domain(r.get("href", "")),
-                "relevance_score": 0.0,
-            })
-        return results
+        import httpx
+
+        response = httpx.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0 Safari/537.36"
+                )
+            },
+            follow_redirects=True,
+            timeout=12.0,
+        )
+        response.raise_for_status()
+        return _parse_duckduckgo_html(response.text, max_results=max_results)
     except Exception as e:
-        return [{"title": f"Search error: {e}", "url": "", "snippet": "", "source": "", "relevance_score": 0.0}]
+        return [{
+            "title": f"Search error: {e}",
+            "url": "",
+            "snippet": "",
+            "source": "",
+            "relevance_score": 0.0,
+        }]
+
+
+def _parse_duckduckgo_html(markup: str, max_results: int = 5) -> List[Dict]:
+    """Extract result cards from DuckDuckGo's lightweight HTML response."""
+    pattern = re.compile(
+        r'<a[^>]+class="result__a"[^>]+href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>.*?'
+        r'<a[^>]+class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    results: List[Dict] = []
+    for match in pattern.finditer(markup):
+        url = _clean_result_url(match.group("url"))
+        title = _strip_html(match.group("title"))
+        snippet = _strip_html(match.group("snippet"))
+        if not title or not url:
+            continue
+        results.append({
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "source": _extract_domain(url),
+            "relevance_score": 0.0,
+        })
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def _strip_html(value: str) -> str:
+    value = re.sub(r"<[^>]+>", "", value or "")
+    return html.unescape(value).strip()
+
+
+def _clean_result_url(url: str) -> str:
+    url = html.unescape(url or "")
+    match = re.search(r"[?&]uddg=([^&]+)", url)
+    if match:
+        from urllib.parse import unquote
+        return unquote(match.group(1))
+    return url
 
 
 def _extract_sub_topics(query: str, results: List[Dict]) -> List[str]:
