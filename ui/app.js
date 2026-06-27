@@ -775,7 +775,7 @@ async function createNewAgent() {
         purpose: wizardData.purpose,
         capabilities: wizardData.capabilities,
         tone: wizardData.tone,
-        model: wizardData.model || 'meta-llama/llama-3-8b-instruct:free',
+        model: wizardData.model || 'openrouter/free',
       }),
     });
 

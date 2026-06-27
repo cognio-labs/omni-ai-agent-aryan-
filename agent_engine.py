@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-import time
-from typing import Iterator, Optional, List, Dict
+from typing import Any, Iterator, Optional, List, Dict
 
 from openai import OpenAI, RateLimitError, APIError
 from sqlalchemy.orm import Session
@@ -157,6 +156,7 @@ def chat_stream(
 
     # Stream from OpenRouter with fallback
     full_response = ""
+    reasoning_details: list[Any] = []
     try:
         stream = client.chat.completions.create(
             model=model,
@@ -164,9 +164,14 @@ def chat_stream(
             stream=True,
             temperature=temperature,
             max_tokens=2048,
+            **_reasoning_kwargs(),
         )
         for chunk in stream:
-            delta = chunk.choices[0].delta.content or ""
+            delta_obj = chunk.choices[0].delta
+            delta = delta_obj.content or ""
+            chunk_reasoning = _get_reasoning_details(delta_obj)
+            if chunk_reasoning:
+                reasoning_details.extend(chunk_reasoning)
             full_response += delta
             yield delta
 
@@ -180,9 +185,14 @@ def chat_stream(
                 stream=True,
                 temperature=temperature,
                 max_tokens=2048,
+                **_reasoning_kwargs(),
             )
             for chunk in stream:
-                delta = chunk.choices[0].delta.content or ""
+                delta_obj = chunk.choices[0].delta
+                delta = delta_obj.content or ""
+                chunk_reasoning = _get_reasoning_details(delta_obj)
+                if chunk_reasoning:
+                    reasoning_details.extend(chunk_reasoning)
                 full_response += delta
                 yield delta
         except Exception as e:
@@ -202,7 +212,8 @@ def chat_stream(
 
     # Save assistant response
     if full_response:
-        _save_message(db, conversation_id, "assistant", full_response)
+        metadata = {"reasoning_details": reasoning_details} if reasoning_details else None
+        _save_message(db, conversation_id, "assistant", full_response, metadata=metadata)
 
     # Auto-update conversation title on first exchange
     _maybe_update_title(db, conversation_id, user_message, client)
@@ -253,6 +264,7 @@ Output ONLY the system prompt text, no labels or preamble."""
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400,
             temperature=0.7,
+            **_reasoning_kwargs(),
         )
         return resp.choices[0].message.content.strip()
     except Exception:
@@ -286,6 +298,7 @@ Format as clean Markdown with code blocks for commands."""
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.5,
+            **_reasoning_kwargs(),
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
@@ -296,11 +309,18 @@ Format as clean Markdown with code blocks for commands."""
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _save_message(db: Session, conversation_id: int, role: str, content: str) -> None:
+def _save_message(
+    db: Session,
+    conversation_id: int,
+    role: str,
+    content: str,
+    metadata: Optional[dict[str, Any]] = None,
+) -> None:
     msg = Message(
         conversation_id=conversation_id,
         role=role,
         content=content,
+        metadata_json=json.dumps(metadata or {}),
     )
     db.add(msg)
     # Update conversation message count and updated_at
@@ -333,6 +353,7 @@ def _maybe_update_title(db: Session, conversation_id: int, first_message: str, c
             ],
             max_tokens=20,
             temperature=0.5,
+            **_reasoning_kwargs(),
         )
         title = resp.choices[0].message.content.strip().strip('"\'')
         if title:
@@ -340,3 +361,29 @@ def _maybe_update_title(db: Session, conversation_id: int, first_message: str, c
             db.commit()
     except Exception:
         pass
+
+
+def _reasoning_kwargs() -> dict[str, Any]:
+    """Enable OpenRouter reasoning while keeping the OpenAI client transport."""
+    if not settings.enable_reasoning:
+        return {}
+    return {"extra_body": {"reasoning": {"enabled": True}}}
+
+
+def _get_reasoning_details(delta_obj: Any) -> list[Any]:
+    reasoning_details = getattr(delta_obj, "reasoning_details", None)
+    if not reasoning_details and hasattr(delta_obj, "model_extra"):
+        reasoning_details = (delta_obj.model_extra or {}).get("reasoning_details")
+    if not reasoning_details:
+        return []
+    if not isinstance(reasoning_details, list):
+        reasoning_details = [reasoning_details]
+    return [_to_plain_data(item) for item in reasoning_details]
+
+
+def _to_plain_data(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True)
+    if isinstance(value, dict):
+        return value
+    return value

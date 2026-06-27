@@ -36,7 +36,19 @@ def get_short_term_messages(db: Session, conversation_id: int, limit: int = 10) 
         .all()
     )
     msgs.reverse()
-    return [{"role": m.role, "content": m.content} for m in msgs]
+    history = []
+    for msg in msgs:
+        item = {"role": msg.role, "content": msg.content}
+        if msg.role == "assistant" and msg.metadata_json:
+            try:
+                metadata = json.loads(msg.metadata_json)
+                reasoning_details = metadata.get("reasoning_details")
+                if reasoning_details:
+                    item["reasoning_details"] = reasoning_details
+            except json.JSONDecodeError:
+                pass
+        history.append(item)
+    return history
 
 
 # ---------------------------------------------------------------------------
