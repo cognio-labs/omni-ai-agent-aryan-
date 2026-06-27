@@ -22,7 +22,6 @@ from models import Conversation, Message, Agent
 from memory import (
     get_short_term_messages,
     retrieve_relevant_memories,
-    store_memory,
     check_and_summarize,
 )
 from search import deep_search, format_search_for_context
@@ -77,11 +76,6 @@ _SEARCH_TRIGGERS = re.compile(
     re.IGNORECASE,
 )
 
-_CODE_TRIGGERS = re.compile(
-    r"\b(write|generate|create|build|implement|code|script|function|class|"
-    r"example|snippet|boilerplate|template)\b",
-    re.IGNORECASE,
-)
 
 _MEMORY_TRIGGERS = re.compile(
     r"\b(remember|recall|earlier|before|previously|last time|we discussed|"

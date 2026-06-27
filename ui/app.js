@@ -10,6 +10,11 @@ const state = {
   agents: [],
   conversations: [],
   isStreaming: false,
+  abortController: null,
+  followScroll: true,
+  lastUserMessage: '',
+  pendingFiles: [],
+  speechRecognition: null,
   agentPanelOpen: false,
   sidebarOpen: true,
 };
@@ -35,7 +40,10 @@ function setupEventListeners() {
   $('new-chat-btn').addEventListener('click', startNewChat);
 
   // Send message
-  $('send-btn').addEventListener('click', sendMessage);
+  $('send-btn').addEventListener('click', () => state.isStreaming ? cancelStreaming() : sendMessage());
+  $('file-upload-btn')?.addEventListener('click', () => $('file-input')?.click());
+  $('file-input')?.addEventListener('change', handleFileSelection);
+  $('voice-btn')?.addEventListener('click', toggleVoiceInput);
   $('message-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -254,6 +262,89 @@ function showWelcomeScreen() {
   $('chat-title').textContent = 'OmniClient AI';
 }
 
+
+// ── Input Attachments & Voice ───────────────────────────────
+function handleFileSelection(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+
+  state.pendingFiles = files.map(file => ({
+    name: file.name,
+    size: file.size,
+    type: file.type || 'unknown',
+  }));
+
+  const summary = state.pendingFiles
+    .map(file => `${file.name} (${formatFileSize(file.size)})`)
+    .join(', ');
+
+  const input = $('message-input');
+  const attachmentNote = `[Attached files: ${summary}]
+`;
+  if (!input.value.includes(attachmentNote)) {
+    input.value = attachmentNote + input.value;
+  }
+  input.focus();
+  autoResizeTextarea();
+  showToast(`${files.length} file${files.length > 1 ? 's' : ''} attached to this prompt.`, 'success');
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, index);
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function toggleVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const voiceBtn = $('voice-btn');
+
+  if (!SpeechRecognition) {
+    showToast('Voice input is not supported in this browser.', 'warning');
+    return;
+  }
+
+  if (state.speechRecognition) {
+    state.speechRecognition.stop();
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = true;
+  recognition.continuous = false;
+  state.speechRecognition = recognition;
+  voiceBtn?.classList.add('recording');
+  showToast('Listening...', 'info');
+
+  let committedTranscript = '';
+  recognition.onresult = (event) => {
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const transcript = event.results[i][0]?.transcript || '';
+      if (event.results[i].isFinal) committedTranscript += transcript;
+      else interimTranscript += transcript;
+    }
+    const input = $('message-input');
+    const base = input.dataset.voiceBase || input.value;
+    input.dataset.voiceBase = base;
+    input.value = `${base}${base && !base.endsWith(' ') ? ' ' : ''}${committedTranscript}${interimTranscript}`.trimStart();
+    autoResizeTextarea();
+  };
+
+  recognition.onerror = () => showToast('Voice capture failed. Please try again.', 'error');
+  recognition.onend = () => {
+    const input = $('message-input');
+    delete input.dataset.voiceBase;
+    state.speechRecognition = null;
+    voiceBtn?.classList.remove('recording');
+  };
+
+  recognition.start();
+}
+
 // ── Agents ──────────────────────────────────────────────────
 async function loadAgents() {
   try {
@@ -281,21 +372,26 @@ async function sendMessage() {
   const message = input.value.trim();
   if (!message || state.isStreaming) return;
 
+  state.lastUserMessage = message;
   input.value = '';
   input.style.height = 'auto';
-  $('send-btn').disabled = true;
-  state.isStreaming = true;
+  $('welcome-screen').classList.add('hidden');
+  $('messages-container').classList.remove('hidden');
 
   appendMessage('user', message);
-  scrollToBottom();
-
-  // Show typing indicator
+  scrollToBottom(true);
+  setStreamingUi(true);
   const typingId = showTypingIndicator();
+  state.abortController = new AbortController();
+
+  let aiMsgEl = null;
+  let rawContent = '';
 
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
+      signal: state.abortController.signal,
       body: JSON.stringify({
         message,
         conversation_id: state.currentConversationId,
@@ -303,77 +399,100 @@ async function sendMessage() {
       })
     });
 
-    if (!res.ok) {
-      const err = await res.json();
-      removeTypingIndicator(typingId);
-      appendMessage('assistant', `**Error**: ${err.detail || 'Unknown error'}`);
-      state.isStreaming = false;
-      $('send-btn').disabled = false;
-      return;
-    }
-
     removeTypingIndicator(typingId);
-    const aiMsgEl = appendMessage('assistant', '');
-    const bubbleEl = aiMsgEl.querySelector('.message-content');
 
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    if (!res.body) throw new Error('This browser does not support streaming responses.');
+
+    aiMsgEl = appendMessage('assistant', '', null, false, true);
+    const bubbleEl = aiMsgEl.querySelector('.message-content');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let rawContent = '';
-    let conversationIdReceived = false;
 
     while (true) {
       const {done, value} = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, {stream: true});
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const dataStr = line.slice(6).trim();
-        if (!dataStr) continue;
-        try {
-          const payload = JSON.parse(dataStr);
-          if (payload.type === 'meta') {
-            if (!conversationIdReceived) {
-              state.currentConversationId = payload.conversation_id;
-              conversationIdReceived = true;
-            }
-          } else if (payload.type === 'token') {
-            rawContent += payload.content;
-            bubbleEl.innerHTML = renderMarkdown(rawContent);
-            // Re-highlight code blocks
-            Prism.highlightAllUnder(bubbleEl);
-            wrapCodeBlocks(bubbleEl);
-            scrollToBottom();
-          } else if (payload.type === 'done') {
-            break;
-          }
-        } catch (_) {}
+      for (const eventText of events) {
+        const payload = parseSsePayload(eventText);
+        if (!payload) continue;
+        if (payload.type === 'meta') {
+          state.currentConversationId = payload.conversation_id;
+        } else if (payload.type === 'token') {
+          rawContent += payload.content || '';
+          bubbleEl.innerHTML = renderMarkdown(rawContent);
+          Prism.highlightAllUnder(bubbleEl);
+          wrapCodeBlocks(bubbleEl);
+          scrollToBottom();
+        }
       }
     }
 
-    // Refresh conversations list to get updated title
+    if (buffer.trim()) {
+      const payload = parseSsePayload(buffer);
+      if (payload?.type === 'token') {
+        rawContent += payload.content || '';
+        bubbleEl.innerHTML = renderMarkdown(rawContent);
+      }
+    }
+
+    if (!rawContent.trim()) {
+      if (aiMsgEl) aiMsgEl.remove();
+      appendMessage('assistant', '**No response returned.** Please check your OpenRouter key/model and try again.');
+    } else {
+      aiMsgEl.classList.remove('streaming');
+      aiMsgEl.querySelector('.stream-cursor')?.remove();
+    }
+
     await loadConversations();
     renderConversationList($('conv-search').value);
-
   } catch (e) {
     removeTypingIndicator(typingId);
-    appendMessage('assistant', `**Connection error**: ${e.message}`);
+    if (aiMsgEl && !rawContent.trim()) aiMsgEl.remove();
+    const msg = e.name === 'AbortError' ? 'Generation cancelled.' : `**Connection error**: ${e.message}`;
+    appendMessage('assistant', msg);
+    showToast(e.name === 'AbortError' ? 'Generation cancelled' : e.message, e.name === 'AbortError' ? 'warning' : 'error');
+  } finally {
+    setStreamingUi(false);
+    state.abortController = null;
+    scrollToBottom();
   }
+}
 
-  state.isStreaming = false;
-  $('send-btn').disabled = false;
-  scrollToBottom();
+function parseSsePayload(eventText) {
+  const data = eventText.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n').trim();
+  if (!data) return null;
+  try { return JSON.parse(data); } catch (e) { console.warn('Invalid SSE event', data); return null; }
+}
+
+function setStreamingUi(isStreaming) {
+  state.isStreaming = isStreaming;
+  const sendBtn = $('send-btn');
+  sendBtn.disabled = false;
+  sendBtn.classList.toggle('is-generating', isStreaming);
+  sendBtn.title = isStreaming ? 'Stop generating' : 'Send message';
+  sendBtn.innerHTML = isStreaming
+    ? '<i data-lucide="square" style="width:18px;height:18px"></i>'
+    : '<i data-lucide="send" style="width:20px;height:20px"></i>';
+  if (window.lucide) lucide.createIcons();
+}
+
+function cancelStreaming() {
+  if (state.abortController) state.abortController.abort();
 }
 
 // ── Message rendering ────────────────────────────────────────
-function appendMessage(role, content, msgId = null, bookmarked = false) {
+function appendMessage(role, content, msgId = null, bookmarked = false, streaming = false) {
   const container = $('messages-container');
   const wrapper = document.createElement('div');
-  wrapper.className = `message-wrapper ${role}`;
+  wrapper.className = `message-wrapper ${role}${streaming ? " streaming" : ""}`;
   if (msgId) wrapper.dataset.msgId = msgId;
 
   const isUser = role === 'user';
@@ -388,7 +507,7 @@ function appendMessage(role, content, msgId = null, bookmarked = false) {
       ${isUser ? `<div class="message-avatar ${avatarClass}">${avatarText}</div>` : ''}
     </div>
     <div class="message-bubble ${bubbleClass}">
-      <div class="message-content">${content ? renderMarkdown(content) : ''}</div>
+      <div class="message-content">${content ? renderMarkdown(content) : ''}</div>${streaming ? '<span class="stream-cursor"></span>' : ''}
     </div>
     <div class="message-actions">
       ${!isUser ? `<button class="msg-action-btn regen-btn" title="Regenerate">↻ Regenerate</button>` : ''}
@@ -409,14 +528,14 @@ function appendMessage(role, content, msgId = null, bookmarked = false) {
 
   // Action listeners
   wrapper.querySelector('.copy-msg-btn')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(content || '');
+    navigator.clipboard.writeText(wrapper.querySelector('.message-content')?.innerText || content || '');
     showToast('Copied to clipboard', 'success');
   });
 
   wrapper.querySelector('.regen-btn')?.addEventListener('click', async () => {
     const prevUser = wrapper.previousElementSibling;
     if (prevUser) {
-      const prevContent = prevUser.querySelector('.message-content')?.textContent;
+      const prevContent = prevUser.querySelector('.message-content')?.innerText || state.lastUserMessage;
       if (prevContent) {
         wrapper.remove();
         $('message-input').value = prevContent;
@@ -448,62 +567,52 @@ function appendMessage(role, content, msgId = null, bookmarked = false) {
 
 // ── Markdown renderer ────────────────────────────────────────
 function renderMarkdown(text) {
-  // Escape HTML first (except code blocks)
-  let html = text;
+  if (!text) return '';
+  const blocks = [];
+  let html = escapeHtml(text);
 
-  // Fenced code blocks
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-    const language = lang || 'text';
-    const escaped = escapeHtml(code.trim());
-    return `<div class="code-block-wrapper">
+  html = html.replace(/```([\w#+.-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const language = (lang || 'text').trim() || 'text';
+    const token = `@@CODE_${blocks.length}@@`;
+    blocks.push(`<div class="code-block-wrapper">
       <div class="code-block-header">
-        <span>${language}</span>
+        <span>${escapeHtml(language)}</span>
         <button class="code-copy-btn" data-code="${encodeURIComponent(code.trim())}">Copy</button>
       </div>
-      <pre class="language-${language}"><code class="language-${language}">${escaped}</code></pre>
-    </div>`;
+      <pre class="language-${escapeHtml(language)}"><code class="language-${escapeHtml(language)}">${escapeHtml(code.trim())}</code></pre>
+    </div>`);
+    return token;
   });
 
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|\s)\*([^*]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/^---+$/gm, '<hr style="border-color:var(--color-border-light);margin:12px 0">');
 
-  // Bold
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // Italic
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-  // Headers
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // Unordered lists
-  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (match) => {
-    if (!match.includes('<ul>')) return '<ul>' + match + '</ul>';
-    return match;
+  html = html.replace(/^(?:[-*] .+(?:\n|$))+/gm, (match) => {
+    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^[-*] /, '')}</li>`).join('');
+    return `<ul>${items}</ul>`;
+  });
+  html = html.replace(/^(?:\d+\. .+(?:\n|$))+/gm, (match) => {
+    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\d+\. /, '')}</li>`).join('');
+    return `<ol>${items}</ol>`;
   });
 
-  // Ordered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  html = html.split(/\n{2,}/).map(part => {
+    const trimmed = part.trim();
+    if (!trimmed) return '';
+    if (/^<(h\d|ul|ol|div|hr)/.test(trimmed)) return trimmed;
+    return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
 
-  // Horizontal rules
-  html = html.replace(/^---+$/gm, '<hr style="border-color:var(--color-border-light);margin:12px 0">');
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#a5b4fc;text-decoration:underline">$1</a>');
-
-  // Line breaks / paragraphs
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = html.replace(/\n/g, '<br>');
-  html = '<p>' + html + '</p>';
-
-  // Clean up empty paragraphs
-  html = html.replace(/<p><\/p>/g, '');
-  html = html.replace(/<p>(<[huo])/g, '$1');
-  html = html.replace(/(<\/[huo][l1-6]>)<\/p>/g, '$1');
-
+  blocks.forEach((block, index) => {
+    html = html.replace(`@@CODE_${index}@@`, block);
+  });
   return html;
 }
 
@@ -944,10 +1053,13 @@ function showToast(message, type = 'info') {
 }
 
 // ── Utilities ─────────────────────────────────────────────────
-function scrollToBottom() {
+function scrollToBottom(force = false) {
   const container = $('messages-container');
+  if (!container) return;
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+  if (!force && distance > 180) return;
   requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
+    container.scrollTo({top: container.scrollHeight, behavior: force ? 'auto' : 'smooth'});
   });
 }
 
