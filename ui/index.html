@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniClient AI — Universal Agent Platform</title>
+  <meta name="description" content="OmniClient AI: A universal AI agent platform with persistent memory, deep web search, sub-agent creation, and one-click deployment guidance." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: { 950: '#020617' }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Prism.js for syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-dockerfile.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <!-- Custom styles -->
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="bg-slate-950 text-slate-100">
+
+<div id="app">
+
+  <!-- ═══════════════════════════════════════════════════════
+       LEFT SIDEBAR
+  ═══════════════════════════════════════════════════════ -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">✦</div>
+        <span>OmniClient <span class="gradient-text">AI</span></span>
+      </div>
+
+      <button id="new-chat-btn">
+        <i data-lucide="plus" style="width:16px;height:16px"></i>
+        New Chat
+      </button>
+    </div>
+
+    <!-- Search -->
+    <div class="sidebar-search">
+      <input type="text" id="conv-search" placeholder="🔍 Search conversations..." />
+    </div>
+
+    <!-- Conversations list -->
+    <div id="conversations-list">
+      <div class="empty-state">No conversations yet.<br>Start a new chat!</div>
+    </div>
+
+    <!-- Agent selector -->
+    <div id="agent-selector-sidebar">
+      <div class="sidebar-section-label" style="padding: 10px 8px 4px;">Active Agent</div>
+      <select id="agent-select" class="form-control"></select>
+    </div>
+
+    <!-- Footer actions -->
+    <div class="sidebar-footer">
+      <button id="new-agent-btn">
+        <i data-lucide="bot" style="width:14px;height:14px"></i>
+        New Agent
+      </button>
+      <button id="settings-btn">
+        <i data-lucide="settings" style="width:14px;height:14px"></i>
+        Settings
+      </button>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════════════════════
+       CENTER CHAT AREA
+  ═══════════════════════════════════════════════════════ -->
+  <main id="chat-area">
+
+    <!-- Sticky Header -->
+    <header id="chat-header">
+      <button id="sidebar-toggle" title="Toggle Sidebar">
+        <i data-lucide="panel-left" style="width:20px;height:20px"></i>
+      </button>
+
+      <span id="chat-title">OmniClient AI</span>
+
+      <div class="header-actions">
+        <button class="header-btn" id="export-btn" title="Export Conversation">
+          <i data-lucide="download" style="width:14px;height:14px"></i>
+          Export
+        </button>
+        <button class="header-btn" id="agent-panel-btn" title="Agent Configuration">
+          <i data-lucide="sliders" style="width:14px;height:14px"></i>
+          Agent
+        </button>
+      </div>
+    </header>
+
+    <!-- Welcome Screen -->
+    <div id="welcome-screen">
+      <div class="welcome-logo">✦</div>
+      <h1 class="welcome-title">Welcome to OmniClient AI</h1>
+      <p class="welcome-subtitle">
+        Your elite AI Client Success Architect. I can guide you through building sub-agents,
+        troubleshoot errors, search the web, query databases, and write production-ready code.
+      </p>
+      <div class="welcome-cards">
+        <div class="welcome-card" data-prompt="I need help creating a specialized AI sub-agent for my project.">
+          <div class="welcome-card-icon">🤖</div>
+          <div class="welcome-card-title">Create a Sub-Agent</div>
+          <div class="welcome-card-desc">Launch the 3-step wizard to build a custom AI agent.</div>
+        </div>
+        <div class="welcome-card" data-prompt="I have an error I need help troubleshooting: ">
+          <div class="welcome-card-icon">🔧</div>
+          <div class="welcome-card-title">Troubleshoot Error</div>
+          <div class="welcome-card-desc">Paste an error log and get step-by-step fixes.</div>
+        </div>
+        <div class="welcome-card" data-prompt="Search the web for the latest information about: ">
+          <div class="welcome-card-icon">🔍</div>
+          <div class="welcome-card-title">Deep Web Search</div>
+          <div class="welcome-card-desc">Multi-step aggregated search with source citations.</div>
+        </div>
+        <div class="welcome-card" data-prompt="How do I deploy my FastAPI application to production?">
+          <div class="welcome-card-icon">🚀</div>
+          <div class="welcome-card-title">Deployment Guide</div>
+          <div class="welcome-card-desc">Get a tailored deployment checklist for your stack.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="messages-container" class="hidden"></div>
+
+    <!-- Input Area -->
+    <div id="input-area">
+      <div class="input-toolbar">
+        <button class="tool-shortcut-btn" data-prefix="🔍 Search:" title="Trigger web search">
+          🔍 Search
+        </button>
+        <button class="tool-shortcut-btn" data-prefix="💾 Remember:" title="Store to memory">
+          💾 Memory
+        </button>
+        <button class="tool-shortcut-btn" id="db-shortcut-btn" title="Open DB query">
+          📊 DB Query
+        </button>
+        <button class="tool-shortcut-btn" data-prefix="🚀 Deploy:" title="Deployment help">
+          🚀 Deploy
+        </button>
+      </div>
+
+      <div class="input-wrapper">
+        <textarea
+          id="message-input"
+          placeholder="Message OmniClient… (Shift+Enter for new line)"
+          rows="1"
+        ></textarea>
+        <button id="send-btn" title="Send message">
+          <i data-lucide="send" style="width:20px;height:20px"></i>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════
+       RIGHT SLIDE-OUT AGENT PANEL
+  ═══════════════════════════════════════════════════════ -->
+  <aside id="agent-panel">
+    <div class="panel-header">
+      <span class="panel-title">Agent Configuration</span>
+      <button class="panel-close-btn" id="close-panel-btn" title="Close panel">
+        <i data-lucide="x" style="width:18px;height:18px"></i>
+      </button>
+    </div>
+
+    <div class="panel-body">
+
+      <!-- Agent Profile -->
+      <div class="agent-profile-card">
+        <div class="agent-avatar-large" id="panel-agent-avatar">O</div>
+        <div class="agent-profile-info">
+          <div class="agent-profile-name" id="panel-agent-name">OmniClient</div>
+          <div class="agent-profile-model" id="panel-agent-model">Loading...</div>
+          <div class="agent-status">
+            <div class="status-dot"></div>
+            Online & Ready
+          </div>
+        </div>
+      </div>
+
+      <!-- Model & Temperature -->
+      <div class="panel-section">
+        <div class="panel-section-label">Model Settings</div>
+        <div class="form-group">
+          <label class="form-label">Model</label>
+          <select id="model-select" class="form-control">
+            <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
+            <option value="mistralai/mistral-7b-instruct:free">Mistral 7B (Free)</option>
+            <option value="google/gemma-2-9b-it:free">Gemma 2 9B (Free)</option>
+            <option value="openchat/openchat-7b:free">OpenChat 7B (Free)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temperature</label>
+          <div class="slider-wrapper">
+            <input type="range" id="temp-slider" class="range-slider" min="0" max="1" step="0.1" value="0.7" />
+            <span class="slider-value" id="temp-value">0.7</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Prompt -->
+      <div class="panel-section">
+        <div class="panel-section-label">System Prompt</div>
+        <div class="form-group">
+          <textarea id="system-prompt-editor" class="form-control" rows="6" placeholder="Enter system prompt..."></textarea>
+        </div>
+      </div>
+
+      <!-- Tools -->
+      <div class="panel-section">
+        <div class="panel-section-label">Tools</div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">🔍 Web Search</div>
+            <div class="toggle-desc">DuckDuckGo multi-step search</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-search" checked />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">📊 DB Query</div>
+            <div class="toggle-desc">Read-only SQL access</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-db" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">💻 Code Generation</div>
+            <div class="toggle-desc">Python, JS, Bash, and more</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-code" checked />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <button class="panel-btn primary" id="save-agent-settings-btn">
+        <i data-lucide="save" style="width:14px;height:14px"></i>
+        Save Agent Settings
+      </button>
+
+      <!-- Memory Inspector -->
+      <div class="panel-section">
+        <div class="panel-section-label">Memory Inspector</div>
+        <div id="memory-list">
+          <div class="empty-state">Start a conversation to see memories.</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="panel-btn" id="load-memory-btn" style="flex:1">
+            <i data-lucide="refresh-cw" style="width:12px;height:12px"></i>
+            Refresh
+          </button>
+          <button class="panel-btn" id="add-memory-btn" style="flex:1">
+            <i data-lucide="plus" style="width:12px;height:12px"></i>
+            Add Memory
+          </button>
+        </div>
+      </div>
+
+      <!-- Deployment -->
+      <div class="panel-section">
+        <div class="panel-section-label">Deployment</div>
+        <button class="panel-btn" id="deploy-guide-btn">
+          <i data-lucide="rocket" style="width:14px;height:14px"></i>
+          Generate Deployment Guide
+        </button>
+      </div>
+
+    </div>
+  </aside>
+
+</div><!-- #app -->
+
+<!-- ═══════════════════════════════════════════════════════
+     TOAST CONTAINER
+═══════════════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL: New Agent Wizard
+═══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="new-agent-modal-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="new-agent-modal-title">
+    <div class="modal-header">
+      <h2 class="modal-title" id="new-agent-modal-title">✦ Create New Agent</h2>
+      <button class="modal-close" id="close-agent-modal-btn" aria-label="Close">✕</button>
+    </div>
+
+    <!-- Wizard progress -->
+    <div>
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-step="1"></div>
+        <div class="wizard-step" data-step="2"></div>
+        <div class="wizard-step" data-step="3"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <span class="wizard-step-label" style="flex:1">Purpose</span>
+        <span class="wizard-step-label" style="flex:1">Capabilities</span>
+        <span class="wizard-step-label" style="flex:1">Personality</span>
+      </div>
+    </div>
+
+    <!-- Step 1: Purpose -->
+    <div id="wizard-page-1" class="wizard-page active">
+      <div class="form-group">
+        <label class="form-label">Agent Name *</label>
+        <input type="text" id="wizard-agent-name" class="form-control" placeholder="e.g., SEO Content Writer" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Purpose / Role *</label>
+        <textarea id="wizard-agent-purpose" class="form-control" rows="3"
+          placeholder="e.g., Write SEO-optimised blog posts, research keywords, and create content strategies."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Short Description</label>
+        <input type="text" id="wizard-agent-desc" class="form-control" placeholder="One-line description for the sidebar" />
+      </div>
+    </div>
+
+    <!-- Step 2: Capabilities -->
+    <div id="wizard-page-2" class="wizard-page">
+      <div class="form-group">
+        <label class="form-label">Select capabilities for this agent:</label>
+        <div class="chip-group">
+          <div class="chip cap-chip" data-cap="Web Search">🔍 Web Search</div>
+          <div class="chip cap-chip" data-cap="Code Generation">💻 Code Generation</div>
+          <div class="chip cap-chip" data-cap="Database Queries">📊 Database Queries</div>
+          <div class="chip cap-chip" data-cap="File Processing">📂 File Processing</div>
+          <div class="chip cap-chip" data-cap="Data Analysis">📈 Data Analysis</div>
+          <div class="chip cap-chip" data-cap="Content Writing">✍️ Content Writing</div>
+          <div class="chip cap-chip" data-cap="API Integration">🔗 API Integration</div>
+          <div class="chip cap-chip" data-cap="Image Analysis">🖼️ Image Analysis</div>
+          <div class="chip cap-chip" data-cap="Email Drafting">📧 Email Drafting</div>
+          <div class="chip cap-chip" data-cap="Deployment Guidance">🚀 Deployment</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Personality & Model -->
+    <div id="wizard-page-3" class="wizard-page">
+      <div class="form-group">
+        <label class="form-label">Tone / Personality</label>
+        <select id="wizard-tone" class="form-control">
+          <option value="Professional">Professional</option>
+          <option value="Casual and Friendly">Casual and Friendly</option>
+          <option value="Technical and Precise">Technical and Precise</option>
+          <option value="Creative and Imaginative">Creative and Imaginative</option>
+          <option value="Concise and Direct">Concise and Direct</option>
+          <option value="Empathetic and Supportive">Empathetic and Supportive</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">AI Model</label>
+        <select id="wizard-model" class="form-control">
+          <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B Instruct (Free)</option>
+          <option value="mistralai/mistral-7b-instruct:free">Mistral 7B Instruct (Free)</option>
+          <option value="google/gemma-2-9b-it:free">Gemma 2 9B IT (Free)</option>
+          <option value="openchat/openchat-7b:free">OpenChat 7B (Free)</option>
+        </select>
+      </div>
+      <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);border-radius:10px;padding:12px;font-size:13px;color:#a5b4fc">
+        ✦ OmniClient will automatically generate a tailored system prompt based on your selections.
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="wizard-back-btn" style="display:none">← Back</button>
+      <button class="btn-primary" id="wizard-next-btn">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL: Database Query
+═══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="db-modal-overlay">
+  <div class="modal" style="max-width:700px" role="dialog" aria-modal="true" aria-labelledby="db-modal-title">
+    <div class="modal-header">
+      <h2 class="modal-title" id="db-modal-title">📊 Database Query</h2>
+      <button class="modal-close" id="close-db-modal-btn" aria-label="Close">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">SQL Query (SELECT / PRAGMA only)</label>
+      <textarea id="db-query-input" class="form-control" rows="4"
+        placeholder="SELECT * FROM conversations LIMIT 10;
+-- Or try: PRAGMA table_info(messages);"></textarea>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn-primary" id="run-query-btn">▶ Run Query</button>
+      <button class="btn-secondary hidden" id="export-csv-btn">⬇ Export CSV</button>
+      <span id="db-row-count" style="font-size:12px;color:var(--color-text-muted);margin-left:auto"></span>
+    </div>
+
+    <div id="db-results" style="max-height:300px;overflow-y:auto"></div>
+
+    <details style="font-size:12px;color:var(--color-text-muted)">
+      <summary style="cursor:pointer;padding:6px 0">Query Explanation</summary>
+      <p id="query-explanation" style="margin:8px 0 0;padding:10px;background:var(--color-surface-2);border-radius:8px;line-height:1.5"></p>
+    </details>
+
+    <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;padding:10px;font-size:12px;color:#fca5a5">
+      ⚠️ Only SELECT and PRAGMA statements are allowed. Write operations are blocked for safety.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MODAL: Settings
+═══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="settings-modal-overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="modal-header">
+      <h2 class="modal-title" id="settings-modal-title">⚙️ Settings</h2>
+      <button class="modal-close" id="close-settings-btn" aria-label="Close">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">OpenRouter API Key</label>
+      <input type="password" id="api-key-input" class="form-control" placeholder="Stored securely in .env file" />
+      <small style="color:var(--color-text-muted);font-size:11px;margin-top:4px;display:block">
+        Edit your .env file directly to change the API key. Get a free key at
+        <a href="https://openrouter.ai/keys" target="_blank" style="color:#a5b4fc">openrouter.ai/keys</a>
+      </small>
+    </div>
+
+    <div style="background:var(--color-surface-2);border-radius:10px;padding:14px;font-size:13px;display:flex;flex-direction:column;gap:8px">
+      <div style="font-weight:600;margin-bottom:4px">Free Models Available</div>
+      <div style="color:var(--color-text-muted)">✓ meta-llama/llama-3-8b-instruct:free</div>
+      <div style="color:var(--color-text-muted)">✓ mistralai/mistral-7b-instruct:free</div>
+      <div style="color:var(--color-text-muted)">✓ google/gemma-2-9b-it:free</div>
+      <div style="color:var(--color-text-muted)">✓ openchat/openchat-7b:free</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Danger Zone</label>
+      <button class="panel-btn" id="reset-memory-btn" style="border-color:var(--color-error);color:var(--color-error)">
+        🗑️ Reset All Memories (Current Conversation)
+      </button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" id="close-settings-btn-2" onclick="document.getElementById('settings-modal-overlay').classList.remove('open')">Cancel</button>
+      <button class="btn-primary" id="save-settings-btn">Save Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- Init Lucide icons -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide) lucide.createIcons();
+  });
+</script>
+
+<!-- App logic -->
+<script src="/static/app.js"></script>
+
+</body>
+</html>
