@@ -17,6 +17,7 @@ const state = {
   speechRecognition: null,
   agentPanelOpen: false,
   sidebarOpen: true,
+  theme: localStorage.getItem('omniclient-theme') || 'dark',
 };
 
 // ── DOM references ──────────────────────────────────────────
@@ -24,6 +25,7 @@ const $ = (id) => document.getElementById(id);
 
 // ── Init ────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  applyTheme(state.theme);
   await loadAgents();
   await loadConversations();
   setupEventListeners();
@@ -44,6 +46,9 @@ function setupEventListeners() {
   $('file-upload-btn')?.addEventListener('click', () => $('file-input')?.click());
   $('file-input')?.addEventListener('change', handleFileSelection);
   $('voice-btn')?.addEventListener('click', toggleVoiceInput);
+  $('theme-toggle-btn')?.addEventListener('click', toggleTheme);
+  $('more-tools-btn')?.addEventListener('click', toggleMoreTools);
+  document.addEventListener('click', closeMoreToolsOnOutsideClick);
   $('message-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -69,11 +74,14 @@ function setupEventListeners() {
     btn.addEventListener('click', () => {
       const prefix = btn.dataset.prefix;
       const input = $('message-input');
-      if (!input.value.startsWith(prefix)) {
+      if (prefix && !input.value.startsWith(prefix)) {
         input.value = prefix + ' ' + input.value;
+        autoResizeTextarea();
       }
       input.focus();
       btn.classList.toggle('active');
+      $('more-tools-menu')?.classList.remove('open');
+      $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
       setTimeout(() => btn.classList.remove('active'), 1000);
     });
   });
@@ -117,6 +125,8 @@ function setupEventListeners() {
 
   // DB query shortcut
   $('db-shortcut-btn').addEventListener('click', () => {
+    $('more-tools-menu')?.classList.remove('open');
+    $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
     openModal('db-modal');
   });
 }
@@ -125,6 +135,40 @@ function setupEventListeners() {
 function toggleSidebar() {
   state.sidebarOpen = !state.sidebarOpen;
   $('sidebar').classList.toggle('collapsed', !state.sidebarOpen);
+}
+
+function applyTheme(theme) {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  state.theme = normalized;
+  document.documentElement.dataset.theme = normalized;
+  document.documentElement.classList.toggle('dark', normalized === 'dark');
+  document.body.classList.toggle('bg-slate-950', normalized === 'dark');
+  document.body.classList.toggle('text-slate-100', normalized === 'dark');
+  localStorage.setItem('omniclient-theme', normalized);
+  const icon = normalized === 'dark' ? 'sun' : 'moon';
+  const btn = $('theme-toggle-btn');
+  if (btn) {
+    btn.innerHTML = `<i data-lucide="${icon}" style="width:16px;height:16px"></i>`;
+    btn.title = normalized === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function toggleTheme() {
+  applyTheme(state.theme === 'dark' ? 'light' : 'dark');
+}
+
+function toggleMoreTools(e) {
+  e.stopPropagation();
+  const menu = $('more-tools-menu');
+  const isOpen = menu?.classList.toggle('open');
+  $('more-tools-btn')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+}
+
+function closeMoreToolsOnOutsideClick(e) {
+  if (e.target.closest('.more-menu-wrap')) return;
+  $('more-tools-menu')?.classList.remove('open');
+  $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
 }
 
 // ── Conversations ────────────────────────────────────────────
@@ -203,13 +247,17 @@ function renderConversationList(filter = '') {
 
 function convHtml(c) {
   const isActive = c.id === state.currentConversationId;
-  const pinIcon = c.pinned ? '📌' : '📍';
+  const pinLabel = c.pinned ? 'Unpin' : 'Pin';
   return `
     <div class="conversation-item ${isActive ? 'active' : ''} ${c.pinned ? 'pinned' : ''}" data-id="${c.id}">
       <span class="conv-title">${escapeHtml(c.title)}</span>
       <span class="conv-actions">
-        <button class="conv-action-btn conv-pin-btn" data-id="${c.id}" title="${c.pinned ? 'Unpin' : 'Pin'}">${pinIcon}</button>
-        <button class="conv-action-btn conv-delete-btn" data-id="${c.id}" title="Delete">🗑️</button>
+        <button class="conv-action-btn conv-pin-btn" data-id="${c.id}" title="${pinLabel}" aria-label="${pinLabel}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3l7 7-4 1-4 7-2-2-5 5-3-3 5-5-2-2 7-4 1-4z"/></svg>
+        </button>
+        <button class="conv-action-btn conv-delete-btn danger" data-id="${c.id}" title="Delete conversation" aria-label="Delete conversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 9h10l-1 12H8L7 9z"/></svg>
+        </button>
       </span>
     </div>`;
 }
@@ -994,7 +1042,6 @@ async function exportConversation() {
 // ── Settings Modal ────────────────────────────────────────────
 function openSettingsModal() {
   // Pre-fill saved API key hint
-  $('api-key-input').placeholder = 'sk-or-... (stored in .env on server)';
   openModal('settings-modal');
 }
 

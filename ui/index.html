@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -64,7 +64,7 @@
 
     <!-- Search -->
     <div class="sidebar-search">
-      <input type="text" id="conv-search" placeholder="🔍 Search conversations..." />
+      <input type="text" id="conv-search" placeholder="Search conversations..." />
     </div>
 
     <!-- Conversations list -->
@@ -105,6 +105,21 @@
       <span id="chat-title">OmniClient AI</span>
 
       <div class="header-actions">
+        <button class="header-btn icon-only" id="theme-toggle-btn" title="Switch theme" aria-label="Switch theme">
+          <i data-lucide="sun" style="width:16px;height:16px"></i>
+        </button>
+        <div class="more-menu-wrap">
+          <button class="header-btn" id="more-tools-btn" title="Tools" aria-haspopup="true" aria-expanded="false">
+            <i data-lucide="more-horizontal" style="width:14px;height:14px"></i>
+            More
+          </button>
+          <div class="more-menu" id="more-tools-menu" role="menu">
+            <button class="tool-shortcut-btn" data-prefix="Search:" role="menuitem">Search</button>
+            <button class="tool-shortcut-btn" data-prefix="Remember:" role="menuitem">Memory</button>
+            <button class="tool-shortcut-btn" id="db-shortcut-btn" role="menuitem">DB Query</button>
+            <button class="tool-shortcut-btn" data-prefix="Deploy:" role="menuitem">Deploy</button>
+          </div>
+        </div>
         <button class="header-btn" id="export-btn" title="Export Conversation">
           <i data-lucide="download" style="width:14px;height:14px"></i>
           Export
@@ -126,22 +141,18 @@
       </p>
       <div class="welcome-cards">
         <div class="welcome-card" data-prompt="I need help creating a specialized AI sub-agent for my project.">
-          <div class="welcome-card-icon">🤖</div>
           <div class="welcome-card-title">Create a Sub-Agent</div>
           <div class="welcome-card-desc">Launch the 3-step wizard to build a custom AI agent.</div>
         </div>
         <div class="welcome-card" data-prompt="I have an error I need help troubleshooting: ">
-          <div class="welcome-card-icon">🔧</div>
           <div class="welcome-card-title">Troubleshoot Error</div>
           <div class="welcome-card-desc">Paste an error log and get step-by-step fixes.</div>
         </div>
         <div class="welcome-card" data-prompt="Search the web for the latest information about: ">
-          <div class="welcome-card-icon">🔍</div>
           <div class="welcome-card-title">Deep Web Search</div>
           <div class="welcome-card-desc">Multi-step aggregated search with source citations.</div>
         </div>
         <div class="welcome-card" data-prompt="How do I deploy my FastAPI application to production?">
-          <div class="welcome-card-icon">🚀</div>
           <div class="welcome-card-title">Deployment Guide</div>
           <div class="welcome-card-desc">Get a tailored deployment checklist for your stack.</div>
         </div>
@@ -153,21 +164,6 @@
 
     <!-- Input Area -->
     <div id="input-area">
-      <div class="input-toolbar">
-        <button class="tool-shortcut-btn" data-prefix="🔍 Search:" title="Trigger web search">
-          🔍 Search
-        </button>
-        <button class="tool-shortcut-btn" data-prefix="💾 Remember:" title="Store to memory">
-          💾 Memory
-        </button>
-        <button class="tool-shortcut-btn" id="db-shortcut-btn" title="Open DB query">
-          📊 DB Query
-        </button>
-        <button class="tool-shortcut-btn" data-prefix="🚀 Deploy:" title="Deployment help">
-          🚀 Deploy
-        </button>
-      </div>
-
       <div class="input-wrapper">
         <input id="file-input" type="file" multiple hidden aria-hidden="true" />
         <button class="input-icon-btn" id="file-upload-btn" type="button" title="Attach file" aria-label="Attach file"><i data-lucide="paperclip"></i></button>
@@ -463,13 +459,11 @@
       <button class="modal-close" id="close-settings-btn" aria-label="Close">✕</button>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">OpenRouter API Key</label>
-      <input type="password" id="api-key-input" class="form-control" placeholder="Stored securely in .env file" />
-      <small style="color:var(--color-text-muted);font-size:11px;margin-top:4px;display:block">
-        Edit your .env file directly to change the API key. Get a free key at
-        <a href="https://openrouter.ai/keys" target="_blank" style="color:#a5b4fc">openrouter.ai/keys</a>
-      </small>
+    <div class="secure-env-note">
+      <div class="secure-env-title">OpenRouter API key is hidden</div>
+      <div class="secure-env-copy">
+        Manage the key only in your local <code>.env</code> file. It is not shown or saved from the browser.
+      </div>
     </div>
 
     <div style="background:var(--color-surface-2);border-radius:10px;padding:14px;font-size:13px;display:flex;flex-direction:column;gap:8px">

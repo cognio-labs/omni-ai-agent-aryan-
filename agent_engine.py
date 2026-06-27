@@ -194,8 +194,11 @@ def chat_stream(
             yield error_msg
             full_response = error_msg
 
-    except APIError as e:
-        error_msg = f"\n**API Error**: {e.message}\n\nPlease check your OpenRouter API key in the Settings panel."
+    except APIError:
+        error_msg = (
+            "\n**OpenRouter authentication failed.**\n\n"
+            "Please rotate/update `OPENROUTER_API_KEY` in `.env`, then restart the server."
+        )
         yield error_msg
         full_response = error_msg
 

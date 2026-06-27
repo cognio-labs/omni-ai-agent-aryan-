@@ -1390,3 +1390,206 @@ select:focus-visible {
   border-color: rgba(239, 68, 68, 0.45);
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.12), 0 10px 24px rgba(239, 68, 68, 0.18);
 }
+
+
+/* Header tools moved into a compact More menu */
+.header-actions {
+  position: relative;
+  gap: 8px;
+}
+
+.header-btn.icon-only {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.more-menu-wrap {
+  position: relative;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 190px;
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  backdrop-filter: blur(18px);
+  z-index: 80;
+}
+
+.more-menu.open {
+  display: flex;
+  animation: menuIn 0.16s ease-out;
+}
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.more-menu .tool-shortcut-btn {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.more-menu .tool-shortcut-btn:hover,
+.more-menu .tool-shortcut-btn.active {
+  background: var(--color-surface-2);
+  border-color: var(--color-border-light);
+  color: var(--color-text);
+  transform: none;
+}
+
+#input-area .input-toolbar {
+  display: none !important;
+}
+
+/* Cleaner welcome cards without avatar-style emoji icons */
+.welcome-card-icon {
+  display: none !important;
+}
+
+.welcome-card {
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.welcome-card-title {
+  margin-bottom: 8px;
+}
+
+/* Conversation history actions: real compact SVG buttons */
+.conversation-item {
+  min-height: 42px;
+  padding-right: 78px;
+}
+
+.conversation-item.pinned::before {
+  content: '' !important;
+}
+
+.conv-actions {
+  display: flex;
+  opacity: 0;
+  transform: translateX(4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.conversation-item:hover .conv-actions,
+.conversation-item:focus-within .conv-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.conv-action-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-text-muted);
+  padding: 0;
+}
+
+.conv-action-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.conv-action-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+  border-color: var(--color-border-light);
+}
+
+.conv-action-btn.danger:hover {
+  color: #fff;
+  background: rgba(239, 68, 68, 0.92);
+  border-color: rgba(239, 68, 68, 0.92);
+}
+
+/* Light theme refinements */
+html[data-theme="light"] body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+html[data-theme="light"] .more-menu {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 20px 56px rgba(15, 23, 42, 0.14), 0 0 0 1px rgba(15, 23, 42, 0.04) inset;
+}
+
+html[data-theme="light"] .welcome-logo,
+html[data-theme="light"] .logo-icon {
+  box-shadow: 0 14px 32px rgba(79, 70, 229, 0.22);
+}
+
+@media (max-width: 760px) {
+  .more-menu {
+    right: -72px;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+}
+
+
+/* Hide message avatar badges for a cleaner chat surface */
+.msg-avatar {
+  display: none !important;
+}
+
+.message,
+.message.user,
+.message.assistant {
+  gap: 0;
+}
+
+.secure-env-note {
+  border: 1px solid var(--color-border-light);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--color-surface-2);
+}
+
+.secure-env-title {
+  color: var(--color-text);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.secure-env-copy {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.secure-env-copy code {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
