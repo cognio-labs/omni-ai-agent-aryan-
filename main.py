@@ -1,5 +1,5 @@
 """
-main.py — FastAPI application entry point for OmniClient AI Agent Platform.
+main.py - FastAPI application entry point for OmniClient AI Agent Platform.
 
 Run with:
     python main.py
@@ -18,7 +18,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -44,6 +44,7 @@ from agent_engine import (
     OMNICLIENT_SYSTEM_PROMPT,
 )
 from agents import create_agent, list_agents, get_agent_by_id
+from slideforge_prompt import SLIDEFORGE_SYSTEM_PROMPT
 
 settings = get_settings()
 
@@ -91,7 +92,7 @@ def on_startup():
         if not existing:
             agent = Agent(
                 name="OmniClient",
-                description="Elite AI Client Success Architect — your primary assistant.",
+                description="Elite AI Client Success Architect - your primary assistant.",
                 system_prompt=OMNICLIENT_SYSTEM_PROMPT,
                 model=settings.default_model,
                 temperature=0.7,
@@ -105,6 +106,35 @@ def on_startup():
         elif existing.config_json and json.loads(existing.config_json or "{}").get("is_primary"):
             if existing.model != settings.default_model:
                 existing.model = settings.default_model
+                db.commit()
+
+        slideforge = db.query(Agent).filter(Agent.name == "SlideForge").first()
+        slideforge_config = json.dumps({"is_slideforge": True, "version": "3.0"})
+        if not slideforge:
+            slideforge = Agent(
+                name="SlideForge",
+                description="AI Presentation and Automation Architect for slides, chat UIs, and n8n workflows.",
+                system_prompt=SLIDEFORGE_SYSTEM_PROMPT,
+                model=settings.default_model,
+                temperature=0.4,
+                enable_search=True,
+                enable_db_query=False,
+                enable_code_gen=True,
+                config_json=slideforge_config,
+            )
+            db.add(slideforge)
+            db.commit()
+        else:
+            cfg = json.loads(slideforge.config_json or "{}")
+            if cfg.get("is_slideforge") or not slideforge.config_json:
+                slideforge.description = "AI Presentation and Automation Architect for slides, chat UIs, and n8n workflows."
+                slideforge.system_prompt = SLIDEFORGE_SYSTEM_PROMPT
+                slideforge.model = settings.default_model
+                slideforge.temperature = 0.4
+                slideforge.enable_search = True
+                slideforge.enable_db_query = False
+                slideforge.enable_code_gen = True
+                slideforge.config_json = slideforge_config
                 db.commit()
     finally:
         db.close()
@@ -161,7 +191,7 @@ class MemoryCreateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Root — serve UI
+# Root - serve UI
 # ---------------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
@@ -528,6 +558,29 @@ def remove_memory(memory_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Memory not found.")
     return {"status": "deleted"}
 
+
+# ---------------------------------------------------------------------------
+# SlideForge export
+# ---------------------------------------------------------------------------
+
+@app.post("/api/slideforge/export/pptx")
+def slideforge_export_pptx(request: Request):
+    """Generate and return the current SlideForge PPTX deck."""
+    try:
+        from generate_presentation import create_presentation
+        create_presentation()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate PPTX: {e}")
+
+    pptx_path = Path(__file__).parent / "digital_marketing_strategy_presentation.pptx"
+    if not pptx_path.exists():
+        raise HTTPException(500, "PPTX generation completed but output file was not found.")
+
+    return FileResponse(
+        path=str(pptx_path),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="digital_marketing_strategy_presentation.pptx",
+    )
 
 # ---------------------------------------------------------------------------
 # Deployment guide

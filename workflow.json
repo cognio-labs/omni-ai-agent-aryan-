@@ -1,123 +1,227 @@
 {
-  "name": "Automated PPTX Slides Creator Pipeline",
+  "name": "SlideForge Contact Form to Presentation Delivery",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "contact-form",
+        "path": "slideforge-contact-form",
         "responseMode": "lastNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5c0e82bb-1e24-47bd-9878-e5bbf30b5354",
+      "name": "Website Contact Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "slideforge-contact-form"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "topic",
+              "name": "topic",
+              "value": "={{ $json.body.topic || 'Digital Marketing Strategy for SaaS Startup' }}",
+              "type": "string"
+            },
+            {
+              "id": "template",
+              "name": "template",
+              "value": "={{ $json.body.template || 'Bold Blue' }}",
+              "type": "string"
+            },
+            {
+              "id": "slides",
+              "name": "slides",
+              "value": "={{ Number($json.body.slides || 10) }}",
+              "type": "number"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "audience",
+              "name": "audience",
+              "value": "={{ $json.body.audience || 'B2B SaaS founders and growth teams' }}",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
-      "id": "e6727284-60e0-407b-8321-cc51db4d6824",
-      "name": "Website Form Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300]
+      "id": "4eca281c-50f4-49e0-943a-69e4f8dde5c1",
+      "name": "Normalize Request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        300
+      ]
     },
     {
       "parameters": {
         "model": "gpt-4o",
-        "options": {},
+        "options": {
+          "temperature": 0.35
+        },
         "messages": {
-          "messageValues": [
+          "values": [
             {
-              "message": "System Prompt: You are SlideForge, an expert Presentation designer. You take user inputs and generate structured slides.\n\nGenerate structured data for a 10-slide deck based on this user details:\nStartup Topic: {{ $json.body.topic }}\nIndustry: {{ $json.body.industry }}\nTarget Audience: {{ $json.body.audience }}\n\nFormat the response strictly as valid JSON containing an array of slide objects. Each object must have fields: 'slideNumber', 'title', 'bullets' (array of strings), 'speakerNotes'."
+              "role": "system",
+              "content": "You are SlideForge, an AI Presentation and Automation Architect. Return only strict JSON with keys topic, template, totalSlides, slides, markdown, htmlExportName, pptxExportName. Each slide object must include slideNumber, slideTitle, slideContent, slideVisualDescription, templateColorHex, and speakerNotes."
+            },
+            {
+              "role": "user",
+              "content": "Create a {{ $json.slides }}-slide presentation for topic: {{ $json.topic }}. Template: {{ $json.template }}. Audience: {{ $json.audience }}. Follow the required slide structure: title, agenda, content slides, data/chart slide, roadmap, and CTA. Use concise slide copy with no more than three bullets per slide."
             }
           ]
         }
       },
-      "id": "e0bfa912-70b1-40ef-bcbb-ef7a151b72e1",
-      "name": "OpenAI: Generate Slide Content",
+      "id": "29e79cd8-60c4-4f2e-8404-8ff3475d2cef",
+      "name": "OpenAI Generate Slide JSON",
       "type": "n8n-nodes-base.openAi",
-      "typeVersion": 1.4,
-      "position": [470, 300],
+      "typeVersion": 1.8,
+      "position": [
+        720,
+        300
+      ],
       "credentials": {
         "openAiApi": {
-          "id": "YOUR_OPENAI_CRED_ID"
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
         }
       }
     },
     {
       "parameters": {
-        "command": "cat << 'EOF' > generate_presentation.py\nfrom pptx import Presentation\nfrom pptx.util import Inches, Pt\nfrom pptx.dml.color import RGBColor\nfrom pptx.enum.text import PP_ALIGN\n\nprs = Presentation()\nprs.slide_width = Inches(13.333)\nprs.slide_height = Inches(7.5)\n\n# Configure elements from JSON output\nslides_data = {{ JSON.stringify($json.choices[0].message.content) }}\n\n# Render pptx process loop\nfor slide_data in slides_data:\n    slide = prs.slides.add_slide(prs.slide_layouts[6])\n    # Add slide rendering logic based on template\n\nprs.save('dynamic_generated_presentation.pptx')\nEOF\npython generate_presentation.py"
+        "method": "POST",
+        "url": "http://localhost:8000/api/slideforge/export/pptx",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { deck: $json, request: $('Normalize Request').item.json } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "presentation"
+            }
+          }
+        }
       },
-      "id": "e89c623a-f112-4ebc-b3a1-efc8f391c0b3",
-      "name": "Execute Command: Run PPTX Script",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [690, 300]
+      "id": "6a4fe782-a0bc-4716-a4e9-d9d95d2bb5bb",
+      "name": "Export PPTX via SlideForge API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ]
     },
     {
       "parameters": {
-        "filePath": "dynamic_generated_presentation.pptx",
-        "dataPropertyName": "data",
+        "sendTo": "={{ $('Normalize Request').item.json.email }}",
+        "subject": "={{ 'Your SlideForge deck: ' + $('Normalize Request').item.json.topic }}",
+        "message": "={{ 'Hi, your generated SlideForge presentation is attached. Topic: ' + $('Normalize Request').item.json.topic + '. Template: ' + $('Normalize Request').item.json.template + '.' }}",
+        "attachments": "presentation",
         "options": {}
       },
-      "id": "f29b47e4-2394-469b-bcfa-dfd38a2e1d74",
-      "name": "Read Binary File: Fetch PPTX",
-      "type": "n8n-nodes-base.readBinaryFile",
-      "typeVersion": 1,
-      "position": [910, 300]
-    },
-    {
-      "parameters": {
-        "sendTo": "{{ $('Website Form Webhook').item.json.body.email }}",
-        "subject": "Your Custom Generated Slide Deck",
-        "message": "Hi, please find your custom generated marketing slide deck attached.",
-        "attachments": "data",
-        "options": {}
-      },
-      "id": "902dcb67-ea21-419b-a0ee-7c6dfcf301df",
-      "name": "Send Email: Send Presentation",
+      "id": "31c1c898-1031-4d4e-93d0-b6bd0975b40b",
+      "name": "Email Presentation to Lead",
       "type": "n8n-nodes-base.emailSend",
-      "typeVersion": 2,
-      "position": [1130, 300],
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        300
+      ],
       "credentials": {
-        "gmailOAuth2": {
-          "id": "YOUR_GMAIL_CRED_ID"
+        "smtp": {
+          "id": "YOUR_SMTP_CREDENTIAL_ID",
+          "name": "SMTP account"
         }
       }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'sent', email: $('Normalize Request').item.json.email, topic: $('Normalize Request').item.json.topic } }}",
+        "options": {}
+      },
+      "id": "36c81523-52c5-4b2c-ac54-71b11a17b57a",
+      "name": "Webhook Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        300
+      ]
     }
   ],
   "connections": {
-    "Website Form Webhook": {
+    "Website Contact Form Webhook": {
       "main": [
         [
           {
-            "node": "OpenAI: Generate Slide Content",
+            "node": "Normalize Request",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI: Generate Slide Content": {
+    "Normalize Request": {
       "main": [
         [
           {
-            "node": "Execute Command: Run PPTX Script",
+            "node": "OpenAI Generate Slide JSON",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Execute Command: Run PPTX Script": {
+    "OpenAI Generate Slide JSON": {
       "main": [
         [
           {
-            "node": "Read Binary File: Fetch PPTX",
+            "node": "Export PPTX via SlideForge API",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Binary File: Fetch PPTX": {
+    "Export PPTX via SlideForge API": {
       "main": [
         [
           {
-            "node": "Send Email: Send Presentation",
+            "node": "Email Presentation to Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Presentation to Lead": {
+      "main": [
+        [
+          {
+            "node": "Webhook Success Response",
             "type": "main",
             "index": 0
           }
@@ -129,5 +233,9 @@
     "executionOrder": "v1"
   },
   "staticData": null,
-  "tags": []
+  "tags": [
+    {
+      "name": "slideforge"
+    }
+  ]
 }

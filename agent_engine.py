@@ -1,5 +1,5 @@
 """
-agent_engine.py — Core AI orchestrator for OmniClient.
+agent_engine.py - Core AI orchestrator for OmniClient.
 
 Responsibilities:
 - Maintain the primary OmniClient system prompt
@@ -25,6 +25,7 @@ from memory import (
     check_and_summarize,
 )
 from search import deep_search, format_search_for_context
+from slideforge_prompt import SLIDEFORGE_SYSTEM_PROMPT
 
 settings = get_settings()
 
@@ -228,7 +229,7 @@ def chat_non_streaming(
     db: Session,
     agent: Optional[Agent] = None,
 ) -> str:
-    """Non-streaming version — collects full response and returns it."""
+    """Non-streaming version - collects full response and returns it."""
     return "".join(chat_stream(user_message, conversation_id, db, agent))
 
 
