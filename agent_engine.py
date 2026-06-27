@@ -60,8 +60,8 @@ def _make_client() -> OpenAI:
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
         default_headers={
-            "HTTP-Referer": "http://localhost:8000",
-            "X-Title": "OmniClient AI",
+            "HTTP-Referer": f"http://localhost:{settings.app_port}",
+            "X-OpenRouter-Title": settings.app_name,
         },
     )
 

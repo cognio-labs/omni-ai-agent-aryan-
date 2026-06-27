@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # OpenRouter
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1")
-    default_model: str = Field(default="openrouter/free")
+    default_model: str = Field(default="qwen/qwen3-coder:free")
     fallback_model: str = Field(default="mistralai/mistral-7b-instruct:free")
     enable_reasoning: bool = Field(default=True)
 

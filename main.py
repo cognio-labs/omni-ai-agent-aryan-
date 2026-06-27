@@ -102,6 +102,10 @@ def on_startup():
             )
             db.add(agent)
             db.commit()
+        elif existing.config_json and json.loads(existing.config_json or "{}").get("is_primary"):
+            if existing.model != settings.default_model:
+                existing.model = settings.default_model
+                db.commit()
     finally:
         db.close()
 
