@@ -72,7 +72,7 @@ class Agent(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, default="")
     system_prompt = Column(Text, nullable=False)
-    model = Column(String(100), default="qwen/qwen3-coder:free")
+    model = Column(String(100), default="cohere/north-mini-code:free")
     created_at = Column(DateTime, default=datetime.utcnow)
     config_json = Column(Text, default="{}")
     temperature = Column(Float, default=0.7)

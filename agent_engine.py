@@ -11,10 +11,16 @@ Responsibilities:
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from typing import Any, Iterator, Optional, List, Dict
 
-from openai import OpenAI, RateLimitError, APIError
+from openai import (
+    OpenAI, APITimeoutError, APIConnectionError,
+    RateLimitError, AuthenticationError, NotFoundError, InternalServerError,
+    BadRequestError, APIError,
+)
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -57,12 +63,16 @@ OMNICLIENT_SYSTEM_PROMPT = """You are OmniClient, an elite AI Client Success Arc
 # ---------------------------------------------------------------------------
 
 def _make_client() -> OpenAI:
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured in .env.")
     return OpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
+        api_key=api_key,
+        base_url=base_url,
         default_headers={
-            "HTTP-Referer": f"http://localhost:{settings.app_port}",
-            "X-OpenRouter-Title": settings.app_name,
+            "HTTP-Referer": f"http://localhost:{os.getenv('APP_PORT', '8001')}",
+            "X-OpenRouter-Title": os.getenv("APP_NAME", "OmniClient AI"),
         },
     )
 
@@ -97,6 +107,45 @@ def _should_recall_memory(message: str) -> bool:
 # Main chat function (streaming)
 # ---------------------------------------------------------------------------
 
+def _get_status_code(e: Exception) -> Optional[int]:
+    return getattr(e, "status_code", None)
+
+
+def _get_meaningful_error(e: Exception) -> str:
+    status_code = _get_status_code(e)
+    if isinstance(e, AuthenticationError) or status_code == 401:
+        return (
+            "Error 401: Invalid OpenRouter API key. Please check that you have "
+            "set a valid `OPENROUTER_API_KEY` in your `.env` file."
+        )
+    elif isinstance(e, BadRequestError) or status_code == 400:
+        return (
+            "Error 400: OpenRouter rejected the request. Please verify the selected "
+            "model supports the requested options and try again."
+        )
+    elif isinstance(e, NotFoundError) or status_code == 404:
+        return (
+            "Error 404: Model or endpoint not found. Please verify the model names "
+            "and the base URL in your `.env` configuration."
+        )
+    elif isinstance(e, RateLimitError) or status_code == 429:
+        return (
+            "Error 429: Rate limit exceeded. Please wait a moment before trying again "
+            "or check your OpenRouter account balance/limits."
+        )
+    elif isinstance(e, InternalServerError) or status_code == 500:
+        return (
+            "Error 500: OpenRouter server error. Please try again later."
+        )
+    elif isinstance(e, (APITimeoutError, APIConnectionError)):
+        return (
+            "Error Timeout: Connection timed out. Please check your internet connection "
+            "or check OpenRouter's status page."
+        )
+    else:
+        return f"Error {status_code or 'Unknown'}: {str(e)}"
+
+
 def chat_stream(
     user_message: str,
     conversation_id: int,
@@ -111,19 +160,23 @@ def chat_stream(
     system_prompt = agent.system_prompt if agent else OMNICLIENT_SYSTEM_PROMPT
     model = agent.model if agent else settings.default_model
     temperature = agent.temperature if agent else 0.7
+    max_tokens = settings.max_tokens if hasattr(settings, "max_tokens") else 4096
 
     # Build context messages
     messages: List[Dict] = [{"role": "system", "content": system_prompt}]
 
     # Inject relevant memories
     if _should_recall_memory(user_message):
-        memories = retrieve_relevant_memories(db, conversation_id, user_message, top_k=3)
-        if memories:
-            mem_text = "\n".join(f"- **{m['key']}**: {m['value']}" for m in memories)
-            messages.append({
-                "role": "system",
-                "content": f"[MEMORY CONTEXT]\n{mem_text}",
-            })
+        try:
+            memories = retrieve_relevant_memories(db, conversation_id, user_message, top_k=3)
+            if memories:
+                mem_text = "\n".join(f"- **{m['key']}**: {m['value']}" for m in memories)
+                messages.append({
+                    "role": "system",
+                    "content": f"[MEMORY CONTEXT]\n{mem_text}",
+                })
+        except Exception as me:
+            print(f"[CHAT] Memory retrieval error: {me}")
 
     # Inject search results
     enable_search = agent.enable_search if agent else settings.enable_deep_search
@@ -140,73 +193,104 @@ def chat_stream(
             yield f"[Search unavailable: {e}]\n\n"
 
     # Add conversation history
-    history = get_short_term_messages(db, conversation_id, limit=10)
-    messages.extend(history)
+    try:
+        history = get_short_term_messages(db, conversation_id, limit=10)
+        messages.extend(history)
+    except Exception as he:
+        print(f"[CHAT] History retrieval error: {he}")
 
     # Add current user message
     messages.append({"role": "user", "content": user_message})
 
     # Save user message to DB
-    _save_message(db, conversation_id, "user", user_message)
+    try:
+        _save_message(db, conversation_id, "user", user_message)
+    except Exception as se:
+        print(f"[CHAT] Message save error: {se}")
 
     # Stream from OpenRouter with fallback
     full_response = ""
     reasoning_details: list[Any] = []
-    try:
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            stream=True,
-            temperature=temperature,
-            max_tokens=2048,
-            **_reasoning_kwargs(),
-        )
-        for chunk in stream:
-            delta_obj = chunk.choices[0].delta
-            delta = delta_obj.content or ""
-            chunk_reasoning = _get_reasoning_details(delta_obj)
-            if chunk_reasoning:
-                reasoning_details.extend(chunk_reasoning)
-            full_response += delta
-            yield delta
+    completed = False
 
-    except RateLimitError:
-        # Fallback model
-        try:
+    models_to_try = [model]
+    if settings.fallback_model and model != settings.fallback_model:
+        models_to_try.append(settings.fallback_model)
+
+    idx = 0
+    while idx < len(models_to_try):
+        target_model = models_to_try[idx]
+        is_fallback = (target_model == settings.fallback_model and target_model != model)
+
+        if is_fallback:
             yield "\n[Switching to fallback model...]\n"
-            stream = client.chat.completions.create(
-                model=settings.fallback_model,
-                messages=messages,
-                stream=True,
-                temperature=temperature,
-                max_tokens=2048,
-                **_reasoning_kwargs(),
-            )
-            for chunk in stream:
-                delta_obj = chunk.choices[0].delta
-                delta = delta_obj.content or ""
-                chunk_reasoning = _get_reasoning_details(delta_obj)
-                if chunk_reasoning:
-                    reasoning_details.extend(chunk_reasoning)
-                full_response += delta
-                yield delta
+
+        print(f"[CHAT] Selected model: {target_model}")
+        print(f"[CHAT] Incoming prompt: {user_message}")
+
+        start_time = time.time()
+
+        try:
+            # We try the request up to 2 times if it's a timeout/connection error
+            for attempt in range(2):
+                try:
+                    stream = client.chat.completions.create(
+                        model=target_model,
+                        messages=messages,
+                        stream=True,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        **_reasoning_kwargs(),
+                    )
+
+                    # Iterate and yield tokens
+                    for chunk in stream:
+                        if not chunk.choices:
+                            continue
+                        delta_obj = chunk.choices[0].delta
+                        if not delta_obj:
+                            continue
+                        delta = delta_obj.content or ""
+                        chunk_reasoning = _get_reasoning_details(delta_obj)
+                        if chunk_reasoning:
+                            reasoning_details.extend(chunk_reasoning)
+                        if delta:
+                            full_response += delta
+                            yield delta
+
+                    response_time = time.time() - start_time
+                    print(f"[CHAT] API response status: Success")
+                    print(f"[CHAT] Response time: {response_time:.2f}s")
+                    completed = True
+                    break
+
+                except (APITimeoutError, APIConnectionError) as te:
+                    if attempt == 0:
+                        print(f"[CHAT] Timeout/Connection error (Attempt 1) with model {target_model}: {te}. Retrying once...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        raise te
+                except Exception as e:
+                    raise e
+
+            if completed:
+                break
+
         except Exception as e:
-            error_msg = f"Both primary and fallback models failed: {e}"
-            yield error_msg
-            full_response = error_msg
+            response_time = time.time() - start_time
+            print(f"[CHAT] Error with model {target_model}: {e}")
+            print(f"[CHAT] Response time: {response_time:.2f}s")
 
-    except APIError:
-        error_msg = (
-            "\n**OpenRouter authentication failed.**\n\n"
-            "Please rotate/update `OPENROUTER_API_KEY` in `.env`, then restart the server."
-        )
-        yield error_msg
-        full_response = error_msg
-
-    except Exception as e:
-        error_msg = f"\n**Error**: {str(e)}"
-        yield error_msg
-        full_response = error_msg
+            # Fallback check
+            if not is_fallback and idx + 1 < len(models_to_try):
+                idx += 1
+                continue
+            else:
+                error_msg = _get_meaningful_error(e)
+                yield f"\n{error_msg}\n"
+                full_response = error_msg
+                break
 
     # Save assistant response
     if full_response:

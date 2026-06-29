@@ -523,11 +523,11 @@ function parseSsePayload(eventText) {
 function setStreamingUi(isStreaming) {
   state.isStreaming = isStreaming;
   const sendBtn = $('send-btn');
-  sendBtn.disabled = false;
+  sendBtn.disabled = isStreaming;
   sendBtn.classList.toggle('is-generating', isStreaming);
-  sendBtn.title = isStreaming ? 'Stop generating' : 'Send message';
+  sendBtn.title = isStreaming ? 'Generating...' : 'Send message';
   sendBtn.innerHTML = isStreaming
-    ? '<i data-lucide="square" style="width:18px;height:18px"></i>'
+    ? '<i data-lucide="loader" class="animate-spin" style="width:18px;height:18px"></i>'
     : '<i data-lucide="send" style="width:20px;height:20px"></i>';
   if (window.lucide) lucide.createIcons();
 }
@@ -932,7 +932,7 @@ async function createNewAgent() {
         purpose: wizardData.purpose,
         capabilities: wizardData.capabilities,
         tone: wizardData.tone,
-        model: wizardData.model || 'openrouter/free',
+        model: wizardData.model || 'cohere/north-mini-code:free',
       }),
     });
 
