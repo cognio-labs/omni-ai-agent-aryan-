@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_engine.py - Core AI orchestrator for OmniClient.
 
 Responsibilities:
@@ -39,23 +39,38 @@ settings = get_settings()
 # Primary system prompt
 # ---------------------------------------------------------------------------
 
-OMNICLIENT_SYSTEM_PROMPT = """You are OmniClient, an elite AI Client Success Architect. Your mission is to understand the client's needs, explain technical concepts clearly, and build solutions. You can:
+OMNICLIENT_SYSTEM_PROMPT = """You are OmniClient AI, a helpful, direct, and intelligent AI assistant.
 
-1. Guide users through creating specialized sub-agents step-by-step.
-2. Explain tools, frameworks, and processes in clear, actionable language.
-3. Troubleshoot errors by analyzing logs and suggesting targeted fixes with code.
-4. Write complete, production-ready Python code when requested.
-5. Search the web for current information (you will be given search results when relevant).
-6. Query databases to retrieve structured information.
-7. Remember context across long conversations using your memory system.
+CRITICAL RULES:
+1. Answer questions DIRECTLY and CONCISELY. Do NOT suggest creating presentations, workflows, slides, or deliverables unless the user EXPLICITLY asks for them.
+2. For simple questions (math, facts, definitions), give a SHORT direct answer.
+3. Never mention your tools, capabilities, or internal processes in responses.
+4. Never offer to build things the user didn't request.
+5. Be conversational and natural.
+6. Do NOT show tool usage text like [TOOL: ...] in your responses - use tools silently.
+7. Never start responses with tool status messages.
 
-**Your personality**: Proactive, precise, and empowering. If a user mentions a complex project, suggest breaking it into specialized sub-agents. If they share an error, diagnose root causes (not just symptoms). Always provide next steps.
+Use tools silently in the background. NEVER show tool invocation text in your final response to the user."""
 
-**When writing code**: Use proper formatting with language-tagged code blocks. Include comments. Ensure code is copy-paste ready.
+DEFAULT_SYSTEM_PROMPT = OMNICLIENT_SYSTEM_PROMPT
+def clean_response(text: str) -> str:
+    """Remove tool call artifacts from response text."""
+    text = re.sub(r'\[TOOL:[^\]]*\]', '', text or '')
+    text = re.sub(r'\[THINKING:[^\]]*\]', '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text.strip())
+    return text
 
-**Sub-agent creation**: When a user wants a new agent, gather: (1) purpose, (2) capabilities needed, (3) tone/personality. Then generate a complete system prompt and configuration.
 
-**Format**: Use Markdown for structure. Use bullet points, headers, and code blocks to improve clarity. Keep responses concise but complete."""
+def filter_response_chunk(text: str) -> str:
+    """Filter streamed chunks without stripping normal token spacing."""
+    if not text:
+        return ''
+    stripped = text.lstrip()
+    if stripped.startswith('[TOOL:') or stripped.startswith('[THINKING:'):
+        return ''
+    text = re.sub(r'\[TOOL:[^\]]*\]', '', text)
+    text = re.sub(r'\[THINKING:[^\]]*\]', '', text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +202,7 @@ def chat_stream(
     enable_search = agent.enable_search if agent else settings.enable_deep_search
     if enable_search and _should_search(user_message):
         try:
-            yield "[TOOL: Searching the web...]\n\n"
+            print("[CHAT] Running deep search silently")
             search_result = deep_search(user_message, db, max_results=settings.max_search_results)
             search_text = format_search_for_context(search_result)
             messages.append({
@@ -195,7 +210,7 @@ def chat_stream(
                 "content": f"[SEARCH RESULTS]\n{search_text}",
             })
         except Exception as e:
-            yield f"[Search unavailable: {e}]\n\n"
+            print(f"[CHAT] Search unavailable: {e}")
 
     # Add conversation history
     try:
@@ -228,7 +243,7 @@ def chat_stream(
         is_fallback = (target_model == settings.fallback_model and target_model != model)
 
         if is_fallback:
-            yield "\n[Switching to fallback model...]\n"
+            print("[CHAT] Switching to fallback model")
 
         print(f"[CHAT] Selected model: {target_model}")
         print(f"[CHAT] Incoming prompt: {user_message}")
@@ -260,8 +275,10 @@ def chat_stream(
                         if chunk_reasoning:
                             reasoning_details.extend(chunk_reasoning)
                         if delta:
-                            full_response += delta
-                            yield delta
+                            cleaned_delta = filter_response_chunk(delta)
+                            if cleaned_delta:
+                                full_response += cleaned_delta
+                                yield cleaned_delta
 
                     response_time = time.time() - start_time
                     print(f"[CHAT] API response status: Success")
@@ -294,8 +311,10 @@ def chat_stream(
             else:
                 error_msg = _get_meaningful_error(e)
                 yield f"\n{error_msg}\n"
-                full_response = error_msg
+                full_response = clean_response(error_msg)
                 break
+
+    full_response = clean_response(full_response)
 
     # Save assistant response
     if full_response:
@@ -319,7 +338,7 @@ def chat_non_streaming(
     agent: Optional[Agent] = None,
 ) -> str:
     """Non-streaming version - collects full response and returns it."""
-    return "".join(chat_stream(user_message, conversation_id, db, agent))
+    return clean_response("".join(chat_stream(user_message, conversation_id, db, agent)))
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +493,10 @@ def _to_plain_data(value: Any) -> Any:
     if isinstance(value, dict):
         return value
     return value
+
+
+
+
 
 
 

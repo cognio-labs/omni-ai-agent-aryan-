@@ -1,4 +1,4 @@
-﻿"""
+"""
 main.py - FastAPI application entry point for OmniClient AI Agent Platform.
 
 Run with:
@@ -111,11 +111,16 @@ def on_startup():
             )
             db.add(agent)
             db.commit()
-        elif existing.config_json and json.loads(existing.config_json or "{}").get("is_primary"):
-            if existing.model != settings.default_model:
-                existing.model = settings.default_model
-                db.commit()
-
+        else:
+            existing.description = "Helpful, direct, general-purpose AI assistant."
+            existing.system_prompt = OMNICLIENT_SYSTEM_PROMPT
+            existing.model = settings.default_model
+            existing.temperature = 0.7
+            existing.enable_search = True
+            existing.enable_db_query = True
+            existing.enable_code_gen = True
+            existing.config_json = json.dumps({"is_primary": True})
+            db.commit()
         slideforge = db.query(Agent).filter(Agent.name == "SlideForge").first()
         slideforge_config = json.dumps({"is_slideforge": True, "version": "3.0"})
         if not slideforge:
@@ -690,6 +695,8 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level="info",
     )
+
+
 
 
 

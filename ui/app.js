@@ -409,8 +409,14 @@ function renderAgentSelector() {
   sel.innerHTML = state.agents.map(a =>
     `<option value="${a.id}" ${a.id === state.currentAgentId ? 'selected' : ''}>${a.name}</option>`
   ).join('');
+
   if (state.agents.length > 0 && !state.currentAgentId) {
-    state.currentAgentId = state.agents[0].id;
+    const omniClient = state.agents.find(a => a.name === 'OmniClient');
+    state.currentAgentId = (omniClient || state.agents[0]).id;
+  }
+
+  if (state.currentAgentId) {
+    sel.value = String(state.currentAgentId);
   }
 }
 
@@ -1122,3 +1128,4 @@ function autoResizeTextarea() {
     textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
   });
 }
+
