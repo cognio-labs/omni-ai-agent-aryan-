@@ -3,93 +3,107 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OmniClient AI - Premium AI Workspace</title>
-  <meta name="description" content="OmniClient AI is a multilingual autonomous AI workspace with agents, memory, retrieval, search, and production workflows." />
+  <title>OmniClient AI Workspace</title>
+  <meta name="description" content="OmniClient AI is a calm, minimal AI workspace for conversation, creation, automation, and sandboxed execution." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260629-ui-fix" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260629-workspace-v3" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
 </head>
 <body>
-  <div id="app" class="workspace-shell">
-    <aside id="sidebar" class="workspace-sidebar" aria-label="Workspace navigation">
-      <div class="brand-row">
-        <button id="sidebar-toggle" class="icon-button ghost" type="button" title="Collapse sidebar" aria-label="Collapse sidebar"><i data-lucide="panel-left-close"></i></button>
-        <div class="brand-mark" aria-hidden="true"><i data-lucide="sparkles"></i></div>
-        <div class="brand-copy"><span class="brand-name">OmniClient</span><span class="brand-subtitle">AI Workspace</span></div>
+  <div id="app" class="workspace">
+    <aside id="sidebar" class="sidebar" aria-label="Conversation history">
+      <div class="sidebar-top">
+        <button id="sidebar-toggle" class="icon-btn" type="button" aria-label="Collapse sidebar" title="Collapse sidebar"><i data-lucide="panel-left-close"></i></button>
+        <button id="new-chat-btn" class="new-chat-btn" type="button"><i data-lucide="plus"></i><span>New chat</span></button>
       </div>
-      <button id="new-chat-btn" class="primary-button" type="button"><i data-lucide="plus"></i><span>New Chat</span><kbd>N</kbd></button>
-      <button id="open-command-btn" class="search-trigger" type="button" aria-label="Open universal search"><i data-lucide="search"></i><span>Search chats, files, memory...</span><kbd>Ctrl K</kbd></button>
-      <input type="search" id="conv-search" class="sr-only" placeholder="Search conversations..." aria-label="Search conversations" />
-      <nav class="nav-stack" aria-label="Workspace sections">
-        <button class="nav-item active" type="button"><i data-lucide="message-square"></i><span>Recent Conversations</span></button>
-        <button class="nav-item" type="button"><i data-lucide="pin"></i><span>Pinned Chats</span></button>
-        <button class="nav-item" type="button"><i data-lucide="folder"></i><span>Folders</span></button>
-        <button class="nav-item" type="button"><i data-lucide="layout-dashboard"></i><span>Projects</span></button>
-        <button class="nav-item" type="button"><i data-lucide="bot"></i><span>AI Agents</span></button>
-        <button class="nav-item" type="button"><i data-lucide="users"></i><span>Team Workspace</span></button>
+      <nav class="history-nav" aria-label="History views">
+        <button class="history-tab active" type="button" data-filter="recent">Recent</button>
+        <button class="history-tab" type="button" data-filter="pinned">Pinned</button>
+        <button class="history-tab" type="button" data-filter="projects">Projects</button>
       </nav>
-      <div class="sidebar-section"><div class="section-title">Pinned</div><div id="pinned-list" class="conversation-stack"></div></div>
-      <div class="sidebar-section sidebar-section-fill"><div class="section-title">Recent</div><div id="conversations-list" class="conversation-stack"><div class="sidebar-empty">Start a new conversation.</div></div></div>
-      <div class="agent-switcher-sidebar"><div class="section-title">Active Agent</div><select id="agent-select" class="field-control" aria-label="Active agent"></select></div>
-      <div class="sidebar-footer"><button id="new-agent-btn" class="secondary-button" type="button"><i data-lucide="bot"></i><span>New Agent</span></button><button id="settings-btn" class="secondary-button" type="button"><i data-lucide="settings"></i><span>Settings</span></button></div>
+      <div id="conversations-list" class="history-list" aria-label="Conversations"></div>
+      <div class="sidebar-bottom">
+        <button id="open-command-btn" class="subtle-row" type="button"><i data-lucide="command"></i><span>Command palette</span><kbd>Ctrl K</kbd></button>
+      </div>
     </aside>
 
-    <main id="chat-area" class="workspace-main">
-      <header id="chat-header" class="chat-header">
-        <div class="header-title-group"><button id="mobile-sidebar-toggle" class="icon-button ghost mobile-only" type="button" title="Open sidebar" aria-label="Open sidebar"><i data-lucide="panel-left"></i></button><div><div id="chat-title" class="chat-title">New Conversation</div><div id="model-caption" class="model-caption">OmniClient agent routing enabled</div></div></div>
-        <div class="header-agent-chips" id="agent-chip-row" aria-label="Agent modes"></div>
-        <div class="header-actions">
-          <button id="thinking-toggle-btn" class="header-action active" type="button" title="Thinking mode" aria-pressed="true"><i data-lucide="brain"></i><span>Thinking</span></button>
-          <button id="search-toggle-btn" class="header-action" type="button" title="Search" aria-pressed="false"><i data-lucide="search"></i><span>Search</span></button>
-          <button id="memory-toggle-btn" class="header-action active" type="button" title="Memory" aria-pressed="true"><i data-lucide="database"></i><span>Memory</span></button>
-          <button id="share-btn" class="icon-button ghost" type="button" title="Share conversation" aria-label="Share conversation"><i data-lucide="share-2"></i></button>
-          <button id="rename-btn" class="icon-button ghost" type="button" title="Rename conversation" aria-label="Rename conversation"><i data-lucide="pencil"></i></button>
-          <button id="export-btn" class="icon-button ghost" type="button" title="Export conversation" aria-label="Export conversation"><i data-lucide="download"></i></button>
-          <button id="theme-toggle-btn" class="icon-button ghost" type="button" title="Switch theme" aria-label="Switch theme"><i data-lucide="moon"></i></button>
-          <button id="agent-panel-btn" class="icon-button outline" type="button" title="Context panel" aria-label="Context panel"><i data-lucide="panel-right-open"></i></button>
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="mobile-sidebar-toggle" class="icon-btn mobile-only" type="button" aria-label="Open sidebar"><i data-lucide="panel-left"></i></button>
+          <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true"><i data-lucide="sparkles"></i></div>
+            <div><div class="brand-name">OmniClient</div><div id="chat-title" class="conversation-title">New Conversation</div></div>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button id="settings-btn" class="icon-btn" type="button" aria-label="Settings" title="Settings"><i data-lucide="settings"></i></button>
+          <button id="more-btn" class="icon-btn" type="button" aria-label="More actions" title="More"><i data-lucide="ellipsis"></i></button>
+          <button id="user-avatar" class="avatar-btn" type="button" aria-label="User profile">U</button>
+        </div>
+        <div id="more-menu" class="more-menu" aria-label="Conversation actions">
+          <button type="button" data-action="rename"><i data-lucide="pencil"></i><span>Rename</span></button>
+          <button type="button" data-action="export"><i data-lucide="download"></i><span>Export</span></button>
+          <button type="button" data-action="theme"><i data-lucide="sun-moon"></i><span>Appearance</span></button>
+          <button type="button" data-action="database"><i data-lucide="database"></i><span>Developer tools</span></button>
         </div>
       </header>
-      <section id="welcome-screen" class="empty-workspace"><div class="empty-inner"><div class="workspace-badge"><i data-lucide="sparkles"></i><span>OmniClient AI</span></div><h1>What should we build, solve, or automate?</h1><p>Choose a starting point or ask naturally. OmniClient will route to the right specialist, use memory when enabled, and stream the answer as it works.</p><div class="suggestion-grid">
-        <button class="suggestion-card" data-prompt="Build a premium SaaS website for my product. Include architecture, pages, UI sections, and implementation steps."><i data-lucide="monitor"></i><span>Build a Website</span></button>
-        <button class="suggestion-card" data-prompt="Generate a production-ready Python FastAPI API with validation, error handling, and setup instructions."><i data-lucide="terminal"></i><span>Generate Python API</span></button>
-        <button class="suggestion-card" data-prompt="Create a CRM workflow for lead capture, scoring, nurturing, and sales handoff."><i data-lucide="workflow"></i><span>Create CRM Workflow</span></button>
-        <button class="suggestion-card" data-prompt="Create a marketing strategy with positioning, channels, campaigns, and KPIs."><i data-lucide="megaphone"></i><span>Marketing Strategy</span></button>
-        <button class="suggestion-card" data-prompt="Design an AI automation that connects data sources, tools, agents, and notifications."><i data-lucide="cpu"></i><span>AI Automation</span></button>
-        <button class="suggestion-card" data-prompt="Create a high-converting landing page with copy, sections, design direction, and implementation notes."><i data-lucide="panels-top-left"></i><span>Landing Page</span></button>
-        <button class="suggestion-card" data-prompt="Research this topic deeply and summarize sources, insights, risks, and recommendations: "><i data-lucide="book-open-search"></i><span>Research Topic</span></button>
-        <button class="suggestion-card" data-prompt="Create a business plan with market, product, operations, pricing, financials, and roadmap."><i data-lucide="briefcase-business"></i><span>Business Plan</span></button>
-      </div></div></section>
-      <section id="messages-container" class="messages-container hidden" aria-live="polite"></section>
-      <section id="thinking-strip" class="thinking-strip hidden" aria-live="polite"><button id="thinking-collapse-btn" type="button"><i data-lucide="chevron-down"></i><span>Reasoning activity</span></button><div id="thinking-steps" class="thinking-steps"></div></section>
-      <section id="input-area" class="composer-dock"><div id="file-preview-row" class="file-preview-row hidden"></div><div class="composer-shell" id="composer-shell"><input id="file-input" type="file" multiple hidden aria-hidden="true" /><button class="composer-icon" id="file-upload-btn" type="button" title="Attach file" aria-label="Attach file"><i data-lucide="paperclip"></i></button><button class="composer-icon" id="voice-btn" type="button" title="Voice input" aria-label="Voice input"><i data-lucide="mic"></i></button><button class="composer-pill" id="composer-search-btn" type="button"><i data-lucide="search"></i><span>Search</span></button><button class="composer-pill active" id="composer-thinking-btn" type="button"><i data-lucide="brain"></i><span>Think</span></button><textarea id="message-input" rows="1" placeholder="Message OmniClient..." aria-label="Message OmniClient"></textarea><button class="composer-pill" id="composer-agent-btn" type="button"><i data-lucide="bot"></i><span id="composer-agent-label">Agent</span></button><button id="send-btn" class="send-button" type="button" title="Send message" aria-label="Send message"><i data-lucide="send"></i></button></div><div class="composer-hint"><span>Enter to send</span><span>Shift Enter for new line</span><span>Ctrl K for search</span></div></section>
-    </main>
 
-    <aside id="agent-panel" class="context-panel" aria-label="Context panel"><div class="context-header"><div><div class="context-kicker">Workspace Context</div><div class="context-title">Agent, memory, and sources</div></div><button class="icon-button ghost" id="close-panel-btn" type="button" aria-label="Close context panel"><i data-lucide="x"></i></button></div><div class="context-body"><div class="agent-profile-card"><div class="agent-avatar-large" id="panel-agent-avatar">O</div><div><div class="agent-profile-name" id="panel-agent-name">OmniClient</div><div class="agent-profile-model" id="panel-agent-model">Loading model...</div><div class="status-line"><span></span> Online and ready</div></div></div><div class="panel-section"><div class="section-title">Model Settings</div><label class="form-label" for="model-select">Model</label><select id="model-select" class="field-control"><option value="cohere/north-mini-code:free">Cohere North Mini Code</option><option value="qwen/qwen3-coder:free">Qwen3 Coder</option><option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B</option><option value="mistralai/mistral-7b-instruct:free">Mistral 7B</option><option value="google/gemma-2-9b-it:free">Gemma 2 9B</option><option value="openchat/openchat-7b:free">OpenChat 7B</option></select><label class="form-label" for="temp-slider">Temperature <span id="temp-value">0.7</span></label><input type="range" id="temp-slider" class="range-slider" min="0" max="1" step="0.1" value="0.7" /></div><div class="panel-section"><div class="section-title">System Prompt</div><textarea id="system-prompt-editor" class="field-control textarea-control" rows="8" placeholder="Agent system prompt"></textarea><button id="save-agent-settings-btn" class="primary-button compact" type="button"><i data-lucide="save"></i><span>Save Agent</span></button></div><div class="panel-section"><div class="section-title">Tools</div><label class="toggle-row"><span><strong>Web Search</strong><small>Search web and documentation</small></span><input type="checkbox" id="toggle-search" checked /><i></i></label><label class="toggle-row"><span><strong>Database Query</strong><small>Read-only SQL access</small></span><input type="checkbox" id="toggle-db" /><i></i></label><label class="toggle-row"><span><strong>Code Generation</strong><small>Production code and scripts</small></span><input type="checkbox" id="toggle-code" checked /><i></i></label></div><div class="panel-section"><div class="section-title">Memory Inspector</div><div id="memory-list" class="memory-list"><div class="sidebar-empty">Start a conversation to see memory.</div></div><div class="split-actions"><button id="load-memory-btn" class="secondary-button" type="button"><i data-lucide="refresh-cw"></i><span>Refresh</span></button><button id="add-memory-btn" class="secondary-button" type="button"><i data-lucide="plus"></i><span>Add</span></button></div></div><button id="deploy-guide-btn" class="secondary-button full" type="button"><i data-lucide="rocket"></i><span>Generate Deployment Guide</span></button></div></aside>
+      <section id="messages-container" class="messages hidden" aria-live="polite"></section>
+      <section id="welcome-screen" class="welcome">
+        <div class="welcome-inner">
+          <p class="quiet-label">OmniClient AI Workspace</p>
+          <h1>What would you like to create today?</h1>
+          <div class="suggestions" aria-label="Prompt suggestions">
+            <button type="button" data-prompt="Build a premium website for my product with architecture, sections, copy, and implementation steps.">Website</button>
+            <button type="button" data-prompt="Design a mobile app experience with screens, flows, UI states, and technical notes.">Mobile App</button>
+            <button type="button" data-prompt="Research this topic deeply and summarize insights, sources, risks, and recommendations: ">Research</button>
+            <button type="button" data-prompt="Create an automation workflow with triggers, tools, data flow, and implementation steps.">Automation</button>
+            <button type="button" data-prompt="Create a polished presentation outline with slides, speaker notes, and visual direction.">Presentation</button>
+          </div>
+        </div>
+      </section>
+
+      <aside id="sandbox-panel" class="sandbox-panel idle collapsed" aria-label="Sandbox tasks">
+        <button id="sandbox-toggle" class="sandbox-summary" type="button"><span class="task-dot"></span><span id="sandbox-summary-text">Sandbox idle</span><i data-lucide="chevron-up"></i></button>
+        <div id="task-list" class="task-list"></div>
+      </aside>
+
+      <section id="input-area" class="composer-dock">
+        <div id="file-preview-row" class="file-row hidden"></div>
+        <div id="composer-shell" class="composer">
+          <input id="file-input" type="file" multiple hidden />
+          <button id="file-upload-btn" class="composer-icon" type="button" aria-label="Attach file" title="Attach file"><i data-lucide="paperclip"></i></button>
+          <button id="voice-btn" class="composer-icon" type="button" aria-label="Microphone" title="Microphone"><i data-lucide="mic"></i></button>
+          <textarea id="message-input" rows="1" placeholder="Message OmniClient..." aria-label="Message OmniClient"></textarea>
+          <div class="agent-menu-wrap">
+            <button id="agent-select-btn" class="agent-select-btn" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="agent-mode-label">General</span><i data-lucide="chevron-down"></i></button>
+            <div id="agent-menu" class="agent-menu" role="listbox"></div>
+          </div>
+          <button id="send-btn" class="send-btn" type="button" aria-label="Send message" title="Send"><i data-lucide="send"></i></button>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <div id="command-overlay" class="command-overlay" role="dialog" aria-modal="true" aria-labelledby="command-title"><div class="command-palette"><div class="command-input-row"><i data-lucide="search"></i><input id="command-input" type="search" placeholder="Search chats, files, projects, memory, web, GitHub, YouTube, PDFs, docs..." /><kbd>Esc</kbd></div><div class="command-status" id="command-status">Universal search across OmniClient workspace.</div><div id="command-results" class="command-results"></div></div></div>
-  <div id="toast-container" aria-live="polite"></div>
+  <div id="command-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Command palette"><div class="command-palette"><div class="command-input-row"><i data-lucide="search"></i><input id="command-input" type="search" placeholder="Search agents, chats, projects, files, settings, commands..." /><kbd>Esc</kbd></div><div id="command-results" class="command-results"></div></div></div>
 
-  <div class="modal-overlay" id="new-agent-modal-overlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="new-agent-modal-title"><div class="modal-header"><h2 class="modal-title" id="new-agent-modal-title">Create New Agent</h2><button class="modal-close" id="close-agent-modal-btn" type="button" aria-label="Close"><i data-lucide="x"></i></button></div><div class="wizard-steps"><span class="wizard-step active" data-step="1"></span><span class="wizard-step" data-step="2"></span><span class="wizard-step" data-step="3"></span></div><div id="wizard-page-1" class="wizard-page active"><label class="form-label">Agent Name</label><input type="text" id="wizard-agent-name" class="field-control" placeholder="SEO Research Strategist" /><label class="form-label">Purpose</label><textarea id="wizard-agent-purpose" class="field-control textarea-control" rows="4" placeholder="Describe the work this agent owns."></textarea><label class="form-label">Short Description</label><input type="text" id="wizard-agent-desc" class="field-control" placeholder="Researches keywords, competitors, and content gaps." /></div><div id="wizard-page-2" class="wizard-page"><label class="form-label">Capabilities</label><div class="chip-group"><button class="chip cap-chip" type="button" data-cap="Web Search">Web Search</button><button class="chip cap-chip" type="button" data-cap="Code Generation">Code Generation</button><button class="chip cap-chip" type="button" data-cap="Database Queries">Database Queries</button><button class="chip cap-chip" type="button" data-cap="File Processing">File Processing</button><button class="chip cap-chip" type="button" data-cap="Data Analysis">Data Analysis</button><button class="chip cap-chip" type="button" data-cap="Content Writing">Content Writing</button><button class="chip cap-chip" type="button" data-cap="API Integration">API Integration</button><button class="chip cap-chip" type="button" data-cap="Deployment Guidance">Deployment</button></div></div><div id="wizard-page-3" class="wizard-page"><label class="form-label">Tone</label><select id="wizard-tone" class="field-control"><option value="Professional">Professional</option><option value="Casual and Friendly">Casual and Friendly</option><option value="Technical and Precise">Technical and Precise</option><option value="Creative and Imaginative">Creative and Imaginative</option><option value="Concise and Direct">Concise and Direct</option></select><label class="form-label">Model</label><select id="wizard-model" class="field-control"><option value="cohere/north-mini-code:free">Cohere North Mini Code</option><option value="qwen/qwen3-coder:free">Qwen3 Coder</option><option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B</option><option value="mistralai/mistral-7b-instruct:free">Mistral 7B</option><option value="google/gemma-2-9b-it:free">Gemma 2 9B</option></select></div><div class="modal-actions"><button class="secondary-button" id="wizard-back-btn" type="button">Back</button><button class="primary-button compact" id="wizard-next-btn" type="button">Next</button></div></div></div>
-  <div class="modal-overlay" id="db-modal-overlay"><div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="db-modal-title"><div class="modal-header"><h2 class="modal-title" id="db-modal-title">Database Query</h2><button class="modal-close" id="close-db-modal-btn" type="button" aria-label="Close"><i data-lucide="x"></i></button></div><label class="form-label">SQL Query (SELECT / PRAGMA only)</label><textarea id="db-query-input" class="field-control textarea-control mono" rows="5" placeholder="SELECT * FROM conversations LIMIT 10;"></textarea><div class="split-actions"><button class="primary-button compact" id="run-query-btn" type="button"><i data-lucide="play"></i><span>Run Query</span></button><button class="secondary-button hidden" id="export-csv-btn" type="button"><i data-lucide="download"></i><span>Export CSV</span></button><span id="db-row-count" class="row-count"></span></div><div id="db-results" class="db-results"></div><p id="query-explanation" class="query-explanation"></p></div></div>
-    <div class="modal-overlay" id="settings-modal-overlay"><div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title"><div class="modal-header"><h2 class="modal-title" id="settings-modal-title">Settings</h2><button class="modal-close" id="close-settings-btn" type="button" aria-label="Close"><i data-lucide="x"></i></button></div><div class="settings-layout"><div class="settings-tabs" role="tablist"><button class="settings-tab active" type="button" data-tab="general">General</button><button class="settings-tab" type="button" data-tab="appearance">Appearance</button><button class="settings-tab" type="button" data-tab="language">Language</button><button class="settings-tab" type="button" data-tab="models">Models</button><button class="settings-tab" type="button" data-tab="memory">Memory</button><button class="settings-tab" type="button" data-tab="voice">Voice</button><button class="settings-tab" type="button" data-tab="notifications">Notifications</button><button class="settings-tab" type="button" data-tab="privacy">Privacy</button><button class="settings-tab" type="button" data-tab="api-keys">API Keys</button><button class="settings-tab" type="button" data-tab="developer">Developer</button><button class="settings-tab" type="button" data-tab="shortcuts">Shortcuts</button><button class="settings-tab" type="button" data-tab="about">About</button></div><div class="settings-content"><div class="settings-panel active" data-panel="general"><h3>General</h3><label class="toggle-row"><span><strong>Developer mode</strong><small>Show advanced workspace controls</small></span><input type="checkbox" checked /><i></i></label><label class="form-label">Default temperature</label><input class="range-slider" type="range" min="0" max="1" step="0.1" value="0.7" /></div><div class="settings-panel" data-panel="appearance"><h3>Appearance</h3><button id="settings-theme-toggle" class="secondary-button" type="button"><i data-lucide="sun-moon"></i><span>Toggle Light / Dark</span></button></div><div class="settings-panel" data-panel="language"><h3>Language</h3><label class="form-label">Assistant language</label><select class="field-control"><option>Auto detect</option><option>English</option><option>Hindi</option><option>Urdu</option><option>Arabic</option><option>French</option><option>Spanish</option><option>Portuguese</option></select></div><div class="settings-panel" data-panel="models"><h3>Models</h3><p>Models are configured server-side through OpenRouter and can be overridden per agent in the context panel.</p></div><div class="settings-panel" data-panel="memory"><h3>Memory</h3><label class="toggle-row"><span><strong>Project memory</strong><small>Use conversation and project context</small></span><input type="checkbox" checked /><i></i></label><button class="secondary-button danger" id="reset-memory-btn" type="button"><i data-lucide="trash-2"></i><span>Reset Conversation Memory</span></button></div><div class="settings-panel" data-panel="voice"><h3>Voice</h3><label class="toggle-row"><span><strong>Voice input</strong><small>Use browser speech recognition when available</small></span><input type="checkbox" checked /><i></i></label></div><div class="settings-panel" data-panel="notifications"><h3>Notifications</h3><label class="toggle-row"><span><strong>Toast notifications</strong><small>Show status updates and errors</small></span><input type="checkbox" checked /><i></i></label></div><div class="settings-panel" data-panel="privacy"><h3>Privacy</h3><p>Secrets, private memories, and internal prompts are never exposed in the browser UI.</p></div><div class="settings-panel" data-panel="api-keys"><h3>API Keys</h3><p>OpenRouter and provider keys are managed in the local server <code>.env</code> file. The browser only shows this safety notice.</p></div><div class="settings-panel" data-panel="developer"><h3>Developer</h3><button class="secondary-button" id="db-shortcut-btn" type="button"><i data-lucide="database"></i><span>Open Database Query</span></button></div><div class="settings-panel" data-panel="shortcuts"><h3>Keyboard Shortcuts</h3><div class="shortcut-list"><span>New chat</span><kbd>N</kbd><span>Search</span><kbd>Ctrl K</kbd><span>Send</span><kbd>Enter</kbd><span>New line</span><kbd>Shift Enter</kbd></div></div><div class="settings-panel" data-panel="about"><h3>About</h3><p>OmniClient AI is a multilingual autonomous agent workspace for chat, research, coding, automation, memory, and retrieval workflows.</p></div></div></div><div class="modal-actions"><button class="secondary-button" id="close-settings-btn-2" type="button">Cancel</button><button class="primary-button compact" id="save-settings-btn" type="button">Save Settings</button></div></div></div>  <script src="/static/app.js?v=20260629-ui-fix"></script>
+  <div id="settings-modal-overlay" class="modal-overlay"><div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings"><div class="modal-header"><h2>Settings</h2><button id="close-settings-btn" class="icon-btn" type="button" aria-label="Close settings"><i data-lucide="x"></i></button></div><div class="settings-layout"><div class="settings-tabs" role="tablist"><button class="settings-tab active" type="button" data-tab="general">General</button><button class="settings-tab" type="button" data-tab="appearance">Appearance</button><button class="settings-tab" type="button" data-tab="models">Models</button><button class="settings-tab" type="button" data-tab="memory">Memory</button><button class="settings-tab" type="button" data-tab="sandbox">Sandbox</button><button class="settings-tab" type="button" data-tab="integrations">Integrations</button><button class="settings-tab" type="button" data-tab="api-keys">API Keys</button><button class="settings-tab" type="button" data-tab="developer">Developer</button><button class="settings-tab" type="button" data-tab="privacy">Privacy</button><button class="settings-tab" type="button" data-tab="about">About</button></div><div class="settings-content"><section class="settings-panel active" data-panel="general"><h3>General</h3><p>OmniClient keeps advanced controls in the command palette and adapts the workspace to the conversation.</p></section><section class="settings-panel" data-panel="appearance"><h3>Appearance</h3><button id="settings-theme-toggle" class="text-btn" type="button">Toggle light or dark mode</button></section><section class="settings-panel" data-panel="models"><h3>Models</h3><p>Models are configured through the server and selected automatically by the active agent mode.</p></section><section class="settings-panel" data-panel="memory"><h3>Memory</h3><p>Memory runs automatically. Conversation memory controls live here instead of in the composer.</p></section><section class="settings-panel" data-panel="sandbox"><h3>Sandbox</h3><p>Execution tasks are routed to the E2B Sandbox layer. The browser displays progress, logs, and outputs only.</p></section><section class="settings-panel" data-panel="integrations"><h3>Integrations</h3><p>Connectors for files, browsers, deployments, and external tools appear here as they are enabled.</p></section><section class="settings-panel" data-panel="api-keys"><h3>API Keys</h3><p>Provider keys stay server-side in environment configuration and are never displayed in the browser.</p></section><section class="settings-panel" data-panel="developer"><h3>Developer</h3><button id="db-shortcut-btn" class="text-btn" type="button">Open database query</button></section><section class="settings-panel" data-panel="privacy"><h3>Privacy</h3><p>Private prompts, secrets, and internal memory remain hidden from the primary workspace UI.</p></section><section class="settings-panel" data-panel="about"><h3>About</h3><p>OmniClient is an AI-first workspace for building, research, automation, documents, and production workflows.</p></section></div></div></div></div>
+
+  <div id="db-modal-overlay" class="modal-overlay"><div class="settings-modal narrow" role="dialog" aria-modal="true" aria-label="Database query"><div class="modal-header"><h2>Database Query</h2><button id="close-db-modal-btn" class="icon-btn" type="button" aria-label="Close database query"><i data-lucide="x"></i></button></div><textarea id="db-query-input" class="db-input" rows="5" placeholder="SELECT * FROM conversations LIMIT 10;"></textarea><div class="modal-actions"><button id="run-query-btn" class="text-btn" type="button">Run query</button><button id="export-csv-btn" class="text-btn hidden" type="button">Export CSV</button><span id="db-row-count"></span></div><div id="db-results" class="db-results"></div><p id="query-explanation" class="muted"></p></div></div>
+
+  <div id="toast-container" aria-live="polite"></div>
+  <script src="/static/app.js?v=20260629-workspace-v3"></script>
 </body>
 </html>
-
-
