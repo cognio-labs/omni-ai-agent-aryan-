@@ -397,21 +397,27 @@ function toggleVoiceInput() {
 async function loadAgents() {
   try {
     const res = await fetch('/api/agents');
-    state.agents = await res.json();
-    renderAgentSelector();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.agents = Array.isArray(data) ? data : (data.agents || []);
+    console.log('[AGENTS] Loaded:', state.agents.length, 'agents');
   } catch (e) {
-    console.error('Failed to load agents:', e);
+    console.error('[AGENTS] Failed to load agents:', e);
+    state.agents = [{id: 1, name: 'OmniClient', description: 'Direct AI Assistant'}];
   }
+  renderAgentSelector();
 }
 
 function renderAgentSelector() {
   const sel = $('agent-select');
+  if (!sel) return;
+
   sel.innerHTML = state.agents.map(a =>
-    `<option value="${a.id}" ${a.id === state.currentAgentId ? 'selected' : ''}>${a.name}</option>`
+    `<option value="${a.id}" ${a.id === state.currentAgentId ? 'selected' : ''}>${escapeHtml(a.name || 'Agent')}</option>`
   ).join('');
 
   if (state.agents.length > 0 && !state.currentAgentId) {
-    const omniClient = state.agents.find(a => a.name === 'OmniClient');
+    const omniClient = state.agents.find(a => (a.name || '').toLowerCase().includes('omniclient'));
     state.currentAgentId = (omniClient || state.agents[0]).id;
   }
 
@@ -480,7 +486,7 @@ async function sendMessage() {
         if (payload.type === 'meta') {
           state.currentConversationId = payload.conversation_id;
         } else if (payload.type === 'token') {
-          rawContent += payload.content || '';
+          rawContent += cleanDisplayContent(payload.content || '');
           bubbleEl.innerHTML = renderMarkdown(rawContent);
           Prism.highlightAllUnder(bubbleEl);
           wrapCodeBlocks(bubbleEl);
@@ -492,7 +498,7 @@ async function sendMessage() {
     if (buffer.trim()) {
       const payload = parseSsePayload(buffer);
       if (payload?.type === 'token') {
-        rawContent += payload.content || '';
+        rawContent += cleanDisplayContent(payload.content || '');
         bubbleEl.innerHTML = renderMarkdown(rawContent);
       }
     }
@@ -520,6 +526,25 @@ async function sendMessage() {
   }
 }
 
+function stripHtmlTags(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/<[^>]*>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function cleanDisplayContent(text) {
+  if (!text) return '';
+  return stripHtmlTags(String(text))
+    .replace(/\[TOOL:[^\]]*\]/g, '')
+    .replace(/\[THINKING:[^\]]*\]/g, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 function parseSsePayload(eventText) {
   const data = eventText.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n').trim();
   if (!data) return null;
@@ -529,6 +554,7 @@ function parseSsePayload(eventText) {
 function setStreamingUi(isStreaming) {
   state.isStreaming = isStreaming;
   const sendBtn = $('send-btn');
+  if (!sendBtn) return;
   sendBtn.disabled = isStreaming;
   sendBtn.classList.toggle('is-generating', isStreaming);
   sendBtn.title = isStreaming ? 'Generating...' : 'Send message';
@@ -544,6 +570,7 @@ function cancelStreaming() {
 
 // ── Message rendering ────────────────────────────────────────
 function appendMessage(role, content, msgId = null, bookmarked = false, streaming = false) {
+  content = cleanDisplayContent(content || '');
   const container = $('messages-container');
   const wrapper = document.createElement('div');
   wrapper.className = `message-wrapper ${role}${streaming ? " streaming" : ""}`;
@@ -1128,4 +1155,7 @@ function autoResizeTextarea() {
     textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
   });
 }
+
+
+
 
