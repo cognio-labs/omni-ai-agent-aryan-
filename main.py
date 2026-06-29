@@ -1,4 +1,4 @@
-"""
+﻿"""
 main.py - FastAPI application entry point for OmniClient AI Agent Platform.
 
 Run with:
@@ -8,9 +8,13 @@ Run with:
 """
 from __future__ import annotations
 
-import os
-from dotenv import load_dotenv
-load_dotenv()
+from dotenv import find_dotenv, load_dotenv
+
+dotenv_path = find_dotenv(usecwd=True)
+if dotenv_path:
+    load_dotenv(dotenv_path, override=True)
+else:
+    load_dotenv(override=True)
 
 import json
 import re
@@ -254,7 +258,11 @@ async def chat_endpoint(request: Request, body: ChatRequest, db: Session = Depen
             "X-Accel-Buffering": "no",
         },
     )
-
+ 
+@app.post("/chat")
+@limiter.limit("10/minute")
+async def legacy_chat_endpoint(request: Request, body: ChatRequest, db: Session = Depends(get_db)):
+    return await chat_endpoint(request, body, db)
 
 # ---------------------------------------------------------------------------
 # Conversations
@@ -682,3 +690,6 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level="info",
     )
+
+
+

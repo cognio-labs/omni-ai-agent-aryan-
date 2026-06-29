@@ -1,4 +1,4 @@
-"""
+﻿"""
 agent_engine.py - Core AI orchestrator for OmniClient.
 
 Responsibilities:
@@ -67,16 +67,17 @@ def _make_client() -> OpenAI:
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not configured in .env.")
+    print(f"[CHAT] OpenRouter base URL: {base_url}")
+    print(f"[CHAT] OpenRouter API key detected: {bool(api_key)}")
     return OpenAI(
         api_key=api_key,
         base_url=base_url,
+        timeout=60.0,
         default_headers={
             "HTTP-Referer": f"http://localhost:{os.getenv('APP_PORT', '8001')}",
             "X-OpenRouter-Title": os.getenv("APP_NAME", "OmniClient AI"),
         },
     )
-
-
 # ---------------------------------------------------------------------------
 # Tool detection
 # ---------------------------------------------------------------------------
@@ -108,7 +109,11 @@ def _should_recall_memory(message: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def _get_status_code(e: Exception) -> Optional[int]:
-    return getattr(e, "status_code", None)
+    status_code = getattr(e, "status_code", None)
+    if status_code:
+        return status_code
+    response = getattr(e, "response", None)
+    return getattr(response, "status_code", None)
 
 
 def _get_meaningful_error(e: Exception) -> str:
@@ -469,3 +474,8 @@ def _to_plain_data(value: Any) -> Any:
     if isinstance(value, dict):
         return value
     return value
+
+
+
+
+

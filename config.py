@@ -1,15 +1,19 @@
-"""
-config.py — Application configuration via pydantic-settings.
+﻿"""
+config.py â€” Application configuration via pydantic-settings.
 Reads values from .env automatically.
 """
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from functools import lru_cache
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from .env when available, and let the file override stale process values.
+dotenv_path = find_dotenv(usecwd=True)
+if dotenv_path:
+    load_dotenv(dotenv_path, override=True)
+else:
+    load_dotenv(override=True)
 
 
 class Settings(BaseSettings):
@@ -58,3 +62,5 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
