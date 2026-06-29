@@ -1,9 +1,4 @@
-/* ============================================================
-   OmniClient AI — app.js
-   Vanilla JavaScript SPA — no frameworks required
-   ============================================================ */
 
-// ── State ───────────────────────────────────────────────────
 const state = {
   currentConversationId: null,
   currentAgentId: null,
@@ -11,1151 +6,695 @@ const state = {
   conversations: [],
   isStreaming: false,
   abortController: null,
-  followScroll: true,
-  lastUserMessage: '',
   pendingFiles: [],
   speechRecognition: null,
   agentPanelOpen: false,
-  sidebarOpen: true,
-  theme: localStorage.getItem('omniclient-theme') || 'dark',
+  sidebarOpen: window.innerWidth > 920,
+  theme: localStorage.getItem('omniclient-theme') || 'light',
+  searchEnabled: false,
+  thinkingEnabled: true,
+  memoryEnabled: true,
 };
 
-// ── DOM references ──────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
+const agentModes = ['General', 'Developer', 'Designer', 'Marketing', 'SEO', 'Research', 'Finance', 'Support', 'Automation', 'Legal', 'HR'];
+const searchSteps = ['Searching Web...', 'Reading Documentation...', 'Analyzing Sources...', 'Summarizing...', 'Generating Answer...'];
+const thinkingSteps = ['Searching...', 'Reading files...', 'Using memory...', 'Reasoning...', 'Generating response...'];
 
-// ── Init ────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', init);
+
+async function init() {
   applyTheme(state.theme);
+  configureMarkdown();
+  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: state.theme === 'dark' ? 'dark' : 'default' });
   await loadAgents();
   await loadConversations();
   setupEventListeners();
+  renderAgentChips();
   showWelcomeScreen();
-  autoResizeTextarea();
-});
+  setSidebar(state.sidebarOpen);
+  refreshIcons();
+}
 
-// ── Event Listeners ─────────────────────────────────────────
 function setupEventListeners() {
-  // Sidebar toggle
-  $('sidebar-toggle').addEventListener('click', toggleSidebar);
-
-  // New chat
-  $('new-chat-btn').addEventListener('click', startNewChat);
-
-  // Send message
-  $('send-btn').addEventListener('click', () => state.isStreaming ? cancelStreaming() : sendMessage());
+  $('sidebar-toggle')?.addEventListener('click', () => setSidebar(!state.sidebarOpen));
+  $('mobile-sidebar-toggle')?.addEventListener('click', () => setSidebar(true));
+  $('new-chat-btn')?.addEventListener('click', () => startNewChat());
+  $('send-btn')?.addEventListener('click', () => state.isStreaming ? cancelStreaming() : sendMessage());
+  $('message-input')?.addEventListener('keydown', handleComposerKeydown);
+  $('message-input')?.addEventListener('input', autoResizeTextarea);
   $('file-upload-btn')?.addEventListener('click', () => $('file-input')?.click());
   $('file-input')?.addEventListener('change', handleFileSelection);
   $('voice-btn')?.addEventListener('click', toggleVoiceInput);
   $('theme-toggle-btn')?.addEventListener('click', toggleTheme);
-  $('more-tools-btn')?.addEventListener('click', toggleMoreTools);
-  document.addEventListener('click', closeMoreToolsOnOutsideClick);
-  $('message-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
-  // Agent panel
-  $('agent-panel-btn').addEventListener('click', toggleAgentPanel);
-  $('close-panel-btn').addEventListener('click', closeAgentPanel);
-
-  // Conversation search
-  $('conv-search').addEventListener('input', filterConversations);
-
-  // Agent selector
-  $('agent-select').addEventListener('change', (e) => {
-    state.currentAgentId = e.target.value ? parseInt(e.target.value) : null;
-    updateAgentPanel();
-  });
-
-  // Tool shortcuts
-  document.querySelectorAll('.tool-shortcut-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const prefix = btn.dataset.prefix;
-      const input = $('message-input');
-      if (prefix && !input.value.startsWith(prefix)) {
-        input.value = prefix + ' ' + input.value;
-        autoResizeTextarea();
-      }
-      input.focus();
-      btn.classList.toggle('active');
-      $('more-tools-menu')?.classList.remove('open');
-      $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
-      setTimeout(() => btn.classList.remove('active'), 1000);
-    });
-  });
-
-  // New agent wizard
-  $('new-agent-btn').addEventListener('click', openNewAgentModal);
-
-  // Settings
-  $('settings-btn').addEventListener('click', openSettingsModal);
-
-  // Export
-  $('export-btn').addEventListener('click', exportConversation);
-
-  // Agent panel controls
-  $('temp-slider').addEventListener('input', (e) => {
-    $('temp-value').textContent = parseFloat(e.target.value).toFixed(1);
-  });
-
-  $('save-agent-settings-btn').addEventListener('click', saveAgentSettings);
-  $('deploy-guide-btn').addEventListener('click', generateDeployGuide);
-  $('load-memory-btn').addEventListener('click', loadMemoryPanel);
-  $('add-memory-btn').addEventListener('click', addMemoryEntry);
-
-  // Welcome cards
-  document.querySelectorAll('.welcome-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const prompt = card.dataset.prompt;
-      startNewChat(null, prompt);
-    });
-  });
-
-  // DB Query modal
-  $('run-query-btn').addEventListener('click', runDbQuery);
-  $('export-csv-btn').addEventListener('click', exportQueryCSV);
-  $('close-db-modal-btn').addEventListener('click', () => closeModal('db-modal'));
-
-  // Settings modal
-  $('close-settings-btn').addEventListener('click', () => closeModal('settings-modal'));
-  $('save-settings-btn').addEventListener('click', saveSettings);
-  $('reset-memory-btn').addEventListener('click', resetMemory);
-
-  // DB query shortcut
-  $('db-shortcut-btn').addEventListener('click', () => {
-    $('more-tools-menu')?.classList.remove('open');
-    $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
-    openModal('db-modal');
-  });
+  $('settings-theme-toggle')?.addEventListener('click', toggleTheme);
+  $('agent-panel-btn')?.addEventListener('click', toggleAgentPanel);
+  $('composer-agent-btn')?.addEventListener('click', toggleAgentPanel);
+  $('close-panel-btn')?.addEventListener('click', closeAgentPanel);
+  $('conv-search')?.addEventListener('input', (e) => renderConversationList(e.target.value));
+  $('agent-select')?.addEventListener('change', (e) => selectAgent(Number(e.target.value)));
+  $('temp-slider')?.addEventListener('input', (e) => $('temp-value').textContent = Number(e.target.value).toFixed(1));
+  $('save-agent-settings-btn')?.addEventListener('click', saveAgentSettings);
+  $('deploy-guide-btn')?.addEventListener('click', generateDeployGuide);
+  $('load-memory-btn')?.addEventListener('click', loadMemoryPanel);
+  $('add-memory-btn')?.addEventListener('click', addMemoryEntry);
+  $('export-btn')?.addEventListener('click', exportConversation);
+  $('share-btn')?.addEventListener('click', shareConversation);
+  $('rename-btn')?.addEventListener('click', renameConversation);
+  $('settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
+  $('new-agent-btn')?.addEventListener('click', openNewAgentModal);
+  $('open-command-btn')?.addEventListener('click', openCommandPalette);
+  $('command-input')?.addEventListener('input', renderCommandResults);
+  $('composer-search-btn')?.addEventListener('click', () => toggleFeature('search'));
+  $('search-toggle-btn')?.addEventListener('click', () => toggleFeature('search'));
+  $('composer-thinking-btn')?.addEventListener('click', () => toggleFeature('thinking'));
+  $('thinking-toggle-btn')?.addEventListener('click', () => toggleFeature('thinking'));
+  $('memory-toggle-btn')?.addEventListener('click', () => toggleFeature('memory'));
+  $('thinking-collapse-btn')?.addEventListener('click', () => $('thinking-strip')?.classList.toggle('collapsed'));
+  $('close-settings-btn')?.addEventListener('click', () => closeModal('settings-modal'));
+  $('close-settings-btn-2')?.addEventListener('click', () => closeModal('settings-modal'));
+  $('save-settings-btn')?.addEventListener('click', saveSettings);
+  $('reset-memory-btn')?.addEventListener('click', resetMemory);
+  $('close-db-modal-btn')?.addEventListener('click', () => closeModal('db-modal'));
+  $('run-query-btn')?.addEventListener('click', runDbQuery);
+  $('export-csv-btn')?.addEventListener('click', exportQueryCSV);
+  $('db-shortcut-btn')?.addEventListener('click', () => { closeModal('settings-modal'); openModal('db-modal'); });
+  $('close-agent-modal-btn')?.addEventListener('click', () => closeModal('new-agent-modal'));
+  $('wizard-next-btn')?.addEventListener('click', wizardNext);
+  $('wizard-back-btn')?.addEventListener('click', wizardBack);
+  document.querySelectorAll('.suggestion-card').forEach((card) => card.addEventListener('click', () => startNewChat(null, card.dataset.prompt || '')));
+  document.querySelectorAll('.cap-chip').forEach((chip) => chip.addEventListener('click', () => chip.classList.toggle('selected')));
+  document.querySelectorAll('.settings-tab').forEach((tab) => tab.addEventListener('click', () => activateSettingsTab(tab.dataset.tab)));
+  document.addEventListener('keydown', handleGlobalKeys);
+  document.addEventListener('click', closeOnOverlayClick);
+  setupDropZone();
 }
 
-// ── Sidebar ─────────────────────────────────────────────────
-function toggleSidebar() {
-  state.sidebarOpen = !state.sidebarOpen;
-  $('sidebar').classList.toggle('collapsed', !state.sidebarOpen);
-}
-
+function refreshIcons() { if (window.lucide) lucide.createIcons(); }
+function setSidebar(open) { state.sidebarOpen = open; $('sidebar')?.classList.toggle('collapsed', !open); }
 function applyTheme(theme) {
-  const normalized = theme === 'light' ? 'light' : 'dark';
+  const normalized = theme === 'dark' ? 'dark' : 'light';
   state.theme = normalized;
   document.documentElement.dataset.theme = normalized;
-  document.documentElement.classList.toggle('dark', normalized === 'dark');
-  document.body.classList.toggle('bg-slate-950', normalized === 'dark');
-  document.body.classList.toggle('text-slate-100', normalized === 'dark');
   localStorage.setItem('omniclient-theme', normalized);
-  const icon = normalized === 'dark' ? 'sun' : 'moon';
   const btn = $('theme-toggle-btn');
-  if (btn) {
-    btn.innerHTML = `<i data-lucide="${icon}" style="width:16px;height:16px"></i>`;
-    btn.title = normalized === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-    if (window.lucide) lucide.createIcons();
-  }
+  if (btn) btn.innerHTML = `<i data-lucide="${normalized === 'dark' ? 'sun' : 'moon'}"></i>`;
+  if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: normalized === 'dark' ? 'dark' : 'default' });
+  refreshIcons();
 }
+function toggleTheme() { applyTheme(state.theme === 'dark' ? 'light' : 'dark'); }
+function configureMarkdown() { if (window.marked) marked.setOptions({ gfm: true, breaks: true, mangle: false, headerIds: false }); }
 
-function toggleTheme() {
-  applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-}
-
-function toggleMoreTools(e) {
-  e.stopPropagation();
-  const menu = $('more-tools-menu');
-  const isOpen = menu?.classList.toggle('open');
-  $('more-tools-btn')?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-}
-
-function closeMoreToolsOnOutsideClick(e) {
-  if (e.target.closest('.more-menu-wrap')) return;
-  $('more-tools-menu')?.classList.remove('open');
-  $('more-tools-btn')?.setAttribute('aria-expanded', 'false');
-}
-
-// ── Conversations ────────────────────────────────────────────
 async function loadConversations() {
   try {
     const res = await fetch('/api/conversations');
     state.conversations = await res.json();
-    renderConversationList();
-  } catch (e) {
-    console.error('Failed to load conversations:', e);
-  }
+    renderConversationList($('conv-search')?.value || '');
+  } catch { showToast('Failed to load conversations', 'error'); }
 }
 
 function renderConversationList(filter = '') {
-  const list = $('conversations-list');
-  const convs = state.conversations.filter(c =>
-    c.title.toLowerCase().includes(filter.toLowerCase())
-  );
+  const term = filter.toLowerCase();
+  const conversations = state.conversations.filter((c) => (c.title || '').toLowerCase().includes(term));
+  renderConversationBucket('pinned-list', conversations.filter((c) => c.pinned), 'No pinned chats yet.');
+  renderConversationBucket('conversations-list', conversations.filter((c) => !c.pinned), 'Start a new conversation.');
+}
 
-  if (convs.length === 0) {
-    list.innerHTML = '<div class="empty-state">No conversations yet.<br>Start a new chat!</div>';
+function renderConversationBucket(id, conversations, emptyText) {
+  const list = $(id);
+  if (!list) return;
+  if (!conversations.length) {
+    list.innerHTML = `<div class="sidebar-empty">${escapeHtml(emptyText)}</div>`;
     return;
   }
-
-  const pinned = convs.filter(c => c.pinned);
-  const regular = convs.filter(c => !c.pinned);
-  let html = '';
-
-  if (pinned.length > 0) {
-    html += '<div class="sidebar-section-label">Pinned</div>';
-    html += pinned.map(convHtml).join('');
-    if (regular.length > 0) html += '<div class="sidebar-section-label">Recent</div>';
-  }
-
-  html += regular.map(convHtml).join('');
-  list.innerHTML = html;
-
-  // Add click listeners
-  list.querySelectorAll('.conversation-item').forEach(item => {
-    item.addEventListener('click', (e) => {
-      if (e.target.closest('.conv-actions')) return;
-      loadConversation(parseInt(item.dataset.id));
-    });
-  });
-
-  list.querySelectorAll('.conv-pin-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = parseInt(btn.dataset.id);
-      const conv = state.conversations.find(c => c.id === id);
-      await fetch(`/api/conversations/${id}`, {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pinned: !conv.pinned})
-      });
-      await loadConversations();
-    });
-  });
-
-  list.querySelectorAll('.conv-delete-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = parseInt(btn.dataset.id);
-      if (confirm('Delete this conversation?')) {
-        await fetch(`/api/conversations/${id}`, {method: 'DELETE'});
-        if (state.currentConversationId === id) {
-          state.currentConversationId = null;
-          showWelcomeScreen();
-        }
-        await loadConversations();
-        showToast('Conversation deleted', 'success');
-      }
-    });
-  });
+  list.innerHTML = conversations.map(convHtml).join('');
+  list.querySelectorAll('.conversation-item').forEach((item) => item.addEventListener('click', (e) => {
+    if (e.target.closest('.conv-actions')) return;
+    loadConversation(Number(item.dataset.id));
+  }));
+  list.querySelectorAll('.conv-pin-btn').forEach((btn) => btn.addEventListener('click', togglePinConversation));
+  list.querySelectorAll('.conv-delete-btn').forEach((btn) => btn.addEventListener('click', deleteConversation));
+  refreshIcons();
 }
 
 function convHtml(c) {
-  const isActive = c.id === state.currentConversationId;
-  const pinLabel = c.pinned ? 'Unpin' : 'Pin';
-  return `
-    <div class="conversation-item ${isActive ? 'active' : ''} ${c.pinned ? 'pinned' : ''}" data-id="${c.id}">
-      <span class="conv-title">${escapeHtml(c.title)}</span>
-      <span class="conv-actions">
-        <button class="conv-action-btn conv-pin-btn" data-id="${c.id}" title="${pinLabel}" aria-label="${pinLabel}">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3l7 7-4 1-4 7-2-2-5 5-3-3 5-5-2-2 7-4 1-4z"/></svg>
-        </button>
-        <button class="conv-action-btn conv-delete-btn danger" data-id="${c.id}" title="Delete conversation" aria-label="Delete conversation">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 7h2v8h-2v-8zm4 0h2v8h-2v-8zM7 9h10l-1 12H8L7 9z"/></svg>
-        </button>
-      </span>
-    </div>`;
+  return `<div class="conversation-item ${c.id === state.currentConversationId ? 'active' : ''}" data-id="${c.id}">
+    <i data-lucide="message-square"></i><span class="conv-title">${escapeHtml(c.title || 'New Conversation')}</span>
+    <span class="conv-actions">
+      <button class="conv-action-btn conv-pin-btn" data-id="${c.id}" title="${c.pinned ? 'Unpin' : 'Pin'}" aria-label="${c.pinned ? 'Unpin' : 'Pin'}"><i data-lucide="${c.pinned ? 'pin-off' : 'pin'}"></i></button>
+      <button class="conv-action-btn conv-delete-btn danger" data-id="${c.id}" title="Delete" aria-label="Delete"><i data-lucide="trash-2"></i></button>
+    </span>
+  </div>`;
 }
 
-function filterConversations(e) {
-  renderConversationList(e.target.value);
+async function togglePinConversation(e) {
+  e.stopPropagation();
+  const id = Number(e.currentTarget.dataset.id);
+  const conv = state.conversations.find((c) => c.id === id);
+  await fetch(`/api/conversations/${id}`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ pinned: !conv?.pinned }) });
+  await loadConversations();
+}
+
+async function deleteConversation(e) {
+  e.stopPropagation();
+  const id = Number(e.currentTarget.dataset.id);
+  if (!confirm('Delete this conversation?')) return;
+  await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+  if (state.currentConversationId === id) { state.currentConversationId = null; showWelcomeScreen(); }
+  await loadConversations();
+  showToast('Conversation deleted', 'success');
 }
 
 async function loadConversation(id) {
   state.currentConversationId = id;
-  renderConversationList($('conv-search').value);
-
   try {
     const res = await fetch(`/api/conversations/${id}`);
     const data = await res.json();
-    $('chat-title').textContent = data.title;
+    $('chat-title').textContent = data.title || 'Conversation';
     $('welcome-screen').classList.add('hidden');
     $('messages-container').classList.remove('hidden');
-
-    const container = $('messages-container');
-    container.innerHTML = '';
-    data.messages.forEach(msg => appendMessage(msg.role, msg.content, msg.id, msg.bookmarked));
-    scrollToBottom();
-
+    $('messages-container').innerHTML = '';
+    for (const msg of data.messages || []) appendMessage(msg.role, msg.content, msg.id, msg.bookmarked);
+    await loadConversations();
     if (state.agentPanelOpen) loadMemoryPanel();
-  } catch (e) {
-    showToast('Failed to load conversation', 'error');
-  }
+    scrollToBottom(true);
+  } catch { showToast('Failed to load conversation', 'error'); }
 }
 
-function startNewChat(e, prefillMessage = null) {
+function startNewChat(_event = null, prefillMessage = '') {
   state.currentConversationId = null;
   $('chat-title').textContent = 'New Conversation';
-  $('welcome-screen').classList.add('hidden');
-  $('messages-container').classList.remove('hidden');
   $('messages-container').innerHTML = '';
-  renderConversationList($('conv-search').value);
-
   if (prefillMessage) {
-    $('message-input').value = prefillMessage;
-    $('message-input').focus();
+    $('welcome-screen').classList.add('hidden');
+    $('messages-container').classList.remove('hidden');
   } else {
-    $('message-input').focus();
+    $('welcome-screen').classList.remove('hidden');
+    $('messages-container').classList.add('hidden');
   }
+  renderConversationList($('conv-search')?.value || '');
+  $('message-input').value = prefillMessage;
+  autoResizeTextarea();
+  $('message-input').focus();
+  if (window.innerWidth <= 920) setSidebar(false);
 }
 
 function showWelcomeScreen() {
   $('welcome-screen').classList.remove('hidden');
   $('messages-container').classList.add('hidden');
-  $('chat-title').textContent = 'OmniClient AI';
+  $('chat-title').textContent = 'New Conversation';
 }
 
-
-// ── Input Attachments & Voice ───────────────────────────────
-function handleFileSelection(event) {
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-
-  state.pendingFiles = files.map(file => ({
-    name: file.name,
-    size: file.size,
-    type: file.type || 'unknown',
-  }));
-
-  const summary = state.pendingFiles
-    .map(file => `${file.name} (${formatFileSize(file.size)})`)
-    .join(', ');
-
-  const input = $('message-input');
-  const attachmentNote = `[Attached files: ${summary}]
-`;
-  if (!input.value.includes(attachmentNote)) {
-    input.value = attachmentNote + input.value;
-  }
-  input.focus();
-  autoResizeTextarea();
-  showToast(`${files.length} file${files.length > 1 ? 's' : ''} attached to this prompt.`, 'success');
-}
-
-function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / Math.pow(1024, index);
-  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
-}
-
-function toggleVoiceInput() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const voiceBtn = $('voice-btn');
-
-  if (!SpeechRecognition) {
-    showToast('Voice input is not supported in this browser.', 'warning');
-    return;
-  }
-
-  if (state.speechRecognition) {
-    state.speechRecognition.stop();
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'en-US';
-  recognition.interimResults = true;
-  recognition.continuous = false;
-  state.speechRecognition = recognition;
-  voiceBtn?.classList.add('recording');
-  showToast('Listening...', 'info');
-
-  let committedTranscript = '';
-  recognition.onresult = (event) => {
-    let interimTranscript = '';
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      const transcript = event.results[i][0]?.transcript || '';
-      if (event.results[i].isFinal) committedTranscript += transcript;
-      else interimTranscript += transcript;
-    }
-    const input = $('message-input');
-    const base = input.dataset.voiceBase || input.value;
-    input.dataset.voiceBase = base;
-    input.value = `${base}${base && !base.endsWith(' ') ? ' ' : ''}${committedTranscript}${interimTranscript}`.trimStart();
-    autoResizeTextarea();
-  };
-
-  recognition.onerror = () => showToast('Voice capture failed. Please try again.', 'error');
-  recognition.onend = () => {
-    const input = $('message-input');
-    delete input.dataset.voiceBase;
-    state.speechRecognition = null;
-    voiceBtn?.classList.remove('recording');
-  };
-
-  recognition.start();
-}
-
-// ── Agents ──────────────────────────────────────────────────
 async function loadAgents() {
   try {
     const res = await fetch('/api/agents');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state.agents = Array.isArray(data) ? data : (data.agents || []);
-    console.log('[AGENTS] Loaded:', state.agents.length, 'agents');
-  } catch (e) {
-    console.error('[AGENTS] Failed to load agents:', e);
-    state.agents = [{id: 1, name: 'OmniClient', description: 'Direct AI Assistant'}];
-  }
+  } catch { state.agents = [{ id: 1, name: 'OmniClient', description: 'General AI Assistant' }]; }
+  if (!state.currentAgentId && state.agents.length) state.currentAgentId = (state.agents.find((a) => /omniclient/i.test(a.name || '')) || state.agents[0]).id;
   renderAgentSelector();
+  renderAgentChips();
 }
 
 function renderAgentSelector() {
-  const sel = $('agent-select');
-  if (!sel) return;
-
-  sel.innerHTML = state.agents.map(a =>
-    `<option value="${a.id}" ${a.id === state.currentAgentId ? 'selected' : ''}>${escapeHtml(a.name || 'Agent')}</option>`
-  ).join('');
-
-  if (state.agents.length > 0 && !state.currentAgentId) {
-    const omniClient = state.agents.find(a => (a.name || '').toLowerCase().includes('omniclient'));
-    state.currentAgentId = (omniClient || state.agents[0]).id;
-  }
-
-  if (state.currentAgentId) {
-    sel.value = String(state.currentAgentId);
-  }
+  const select = $('agent-select');
+  if (!select) return;
+  select.innerHTML = state.agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name || 'Agent')}</option>`).join('');
+  if (state.currentAgentId) select.value = String(state.currentAgentId);
+  updateAgentCaptions();
 }
 
-// ── Chat ────────────────────────────────────────────────────
+function renderAgentChips() {
+  const row = $('agent-chip-row');
+  if (!row) return;
+  row.innerHTML = agentModes.map((mode, index) => `<button class="agent-chip ${index === 0 ? 'active' : ''}" type="button" data-mode="${mode}"><i data-lucide="${agentIcon(mode)}"></i>${mode}</button>`).join('');
+  row.querySelectorAll('.agent-chip').forEach((chip) => chip.addEventListener('click', () => {
+    row.querySelectorAll('.agent-chip').forEach((el) => el.classList.remove('active'));
+    chip.classList.add('active');
+    showToast(`${chip.dataset.mode} agent mode selected`, 'info');
+  }));
+  refreshIcons();
+}
+
+function agentIcon(mode) {
+  return ({ Developer: 'code-2', Research: 'book-open-search', Designer: 'pen-tool', Marketing: 'megaphone', Automation: 'workflow', Finance: 'chart-no-axes-combined', SEO: 'search-check', Support: 'headphones', Legal: 'scale', HR: 'contact-round' })[mode] || 'sparkles';
+}
+function selectAgent(id) { state.currentAgentId = id; updateAgentCaptions(); if (state.agentPanelOpen) updateAgentPanel(); }
+function getCurrentAgent() { return state.agents.find((a) => a.id === state.currentAgentId) || state.agents[0]; }
+function updateAgentCaptions() {
+  const agent = getCurrentAgent();
+  if (!agent) return;
+  $('composer-agent-label').textContent = agent.name || 'Agent';
+  $('model-caption').textContent = `${agent.name || 'Agent'}${agent.model ? ` - ${agent.model}` : ' - adaptive routing'}`;
+}
+function handleComposerKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
 async function sendMessage() {
   const input = $('message-input');
   const message = input.value.trim();
   if (!message || state.isStreaming) return;
-
-  state.lastUserMessage = message;
   input.value = '';
-  input.style.height = 'auto';
+  autoResizeTextarea();
   $('welcome-screen').classList.add('hidden');
   $('messages-container').classList.remove('hidden');
-
   appendMessage('user', message);
-  scrollToBottom(true);
   setStreamingUi(true);
-  const typingId = showTypingIndicator();
+  renderThinkingSteps(state.searchEnabled ? searchSteps : thinkingSteps);
+  const skeletonId = showSkeleton();
   state.abortController = new AbortController();
-
-  let aiMsgEl = null;
+  let assistantEl = null;
   let rawContent = '';
-
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       signal: state.abortController.signal,
-      body: JSON.stringify({
-        message,
-        conversation_id: state.currentConversationId,
-        agent_id: state.currentAgentId,
-      })
+      body: JSON.stringify({ message, conversation_id: state.currentConversationId, agent_id: state.currentAgentId }),
     });
-
-    removeTypingIndicator(typingId);
-
+    removeElement(skeletonId);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-    if (!res.body) throw new Error('This browser does not support streaming responses.');
-
-    aiMsgEl = appendMessage('assistant', '', null, false, true);
-    const bubbleEl = aiMsgEl.querySelector('.message-content');
+    if (!res.body) throw new Error('Streaming is not available in this browser.');
+    assistantEl = appendMessage('assistant', '', null, false, true);
+    const contentEl = assistantEl.querySelector('.message-content');
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
-      const {done, value} = await reader.read();
+      const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, {stream: true});
+      buffer += decoder.decode(value, { stream: true });
       const events = buffer.split('\n\n');
       buffer = events.pop() || '';
-
       for (const eventText of events) {
         const payload = parseSsePayload(eventText);
         if (!payload) continue;
-        if (payload.type === 'meta') {
-          state.currentConversationId = payload.conversation_id;
-        } else if (payload.type === 'token') {
+        if (payload.type === 'meta') state.currentConversationId = payload.conversation_id;
+        if (payload.type === 'token') {
           rawContent += cleanDisplayContent(payload.content || '');
-          bubbleEl.innerHTML = renderMarkdown(rawContent);
-          Prism.highlightAllUnder(bubbleEl);
-          wrapCodeBlocks(bubbleEl);
+          renderMessageContent(contentEl, rawContent);
           scrollToBottom();
         }
       }
     }
-
-    if (buffer.trim()) {
-      const payload = parseSsePayload(buffer);
-      if (payload?.type === 'token') {
-        rawContent += cleanDisplayContent(payload.content || '');
-        bubbleEl.innerHTML = renderMarkdown(rawContent);
-      }
-    }
-
     if (!rawContent.trim()) {
-      if (aiMsgEl) aiMsgEl.remove();
-      appendMessage('assistant', '**No response returned.** Please check your OpenRouter key/model and try again.');
+      assistantEl?.remove();
+      appendMessage('assistant', '**No response returned.** Please check the active model and API configuration.');
     } else {
-      aiMsgEl.classList.remove('streaming');
-      aiMsgEl.querySelector('.stream-cursor')?.remove();
+      assistantEl.classList.remove('streaming');
+      assistantEl.querySelector('.stream-cursor')?.remove();
+      await enhanceMarkdown(assistantEl);
     }
-
     await loadConversations();
-    renderConversationList($('conv-search').value);
-  } catch (e) {
-    removeTypingIndicator(typingId);
-    if (aiMsgEl && !rawContent.trim()) aiMsgEl.remove();
-    const msg = e.name === 'AbortError' ? 'Generation cancelled.' : `**Connection error**: ${e.message}`;
+  } catch (error) {
+    removeElement(skeletonId);
+    if (assistantEl && !rawContent.trim()) assistantEl.remove();
+    const msg = error.name === 'AbortError' ? 'Generation cancelled.' : `**Connection error:** ${error.message}`;
     appendMessage('assistant', msg);
-    showToast(e.name === 'AbortError' ? 'Generation cancelled' : e.message, e.name === 'AbortError' ? 'warning' : 'error');
+    showToast(error.name === 'AbortError' ? 'Generation cancelled' : error.message, error.name === 'AbortError' ? 'warning' : 'error');
   } finally {
     setStreamingUi(false);
     state.abortController = null;
+    state.pendingFiles = [];
+    renderFilePreview();
     scrollToBottom();
   }
 }
 
-function stripHtmlTags(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/<[^>]*>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
-function cleanDisplayContent(text) {
-  if (!text) return '';
-  return stripHtmlTags(String(text))
-    .replace(/\[TOOL:[^\]]*\]/g, '')
-    .replace(/\[THINKING:[^\]]*\]/g, '')
-    .replace(/\n{3,}/g, '\n\n');
-}
-
 function parseSsePayload(eventText) {
-  const data = eventText.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n').trim();
-  if (!data) return null;
-  try { return JSON.parse(data); } catch (e) { console.warn('Invalid SSE event', data); return null; }
+  const data = eventText.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n');
+  if (!data || data === '[DONE]') return null;
+  try { return JSON.parse(data); } catch { return null; }
 }
 
 function setStreamingUi(isStreaming) {
   state.isStreaming = isStreaming;
-  const sendBtn = $('send-btn');
-  if (!sendBtn) return;
-  sendBtn.disabled = isStreaming;
-  sendBtn.classList.toggle('is-generating', isStreaming);
-  sendBtn.title = isStreaming ? 'Generating...' : 'Send message';
-  sendBtn.innerHTML = isStreaming
-    ? '<i data-lucide="loader" class="animate-spin" style="width:18px;height:18px"></i>'
-    : '<i data-lucide="send" style="width:20px;height:20px"></i>';
-  if (window.lucide) lucide.createIcons();
+  $('send-btn').classList.toggle('is-generating', isStreaming);
+  $('send-btn').innerHTML = `<i data-lucide="${isStreaming ? 'square' : 'send'}"></i>`;
+  $('thinking-strip').classList.toggle('hidden', !isStreaming || !state.thinkingEnabled);
+  refreshIcons();
 }
-
-function cancelStreaming() {
-  if (state.abortController) state.abortController.abort();
+function cancelStreaming() { state.abortController?.abort(); }
+function renderThinkingSteps(steps) { $('thinking-steps').innerHTML = steps.map((step) => `<div class="thinking-step"><span></span>${escapeHtml(step)}</div>`).join(''); }
+function showSkeleton() {
+  const id = `skeleton-${Date.now()}`;
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'skeleton-message';
+  el.innerHTML = '<div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div>';
+  $('messages-container').appendChild(el);
+  scrollToBottom(true);
+  return id;
 }
+function removeElement(id) { const el = $(id); if (el) el.remove(); }
 
-// ── Message rendering ────────────────────────────────────────
 function appendMessage(role, content, msgId = null, bookmarked = false, streaming = false) {
-  content = cleanDisplayContent(content || '');
-  const container = $('messages-container');
-  const wrapper = document.createElement('div');
-  wrapper.className = `message-wrapper ${role}${streaming ? " streaming" : ""}`;
+  const wrapper = document.createElement('article');
+  wrapper.className = `message-wrapper ${role}${streaming ? ' streaming' : ''}`;
   if (msgId) wrapper.dataset.msgId = msgId;
-
   const isUser = role === 'user';
-  const avatarClass = isUser ? 'user-avatar' : 'ai-avatar';
-  const avatarText = isUser ? '👤' : '✦';
-  const bubbleClass = isUser ? 'user' : 'assistant';
-
-  wrapper.innerHTML = `
-    <div class="message-meta">
-      ${!isUser ? `<div class="message-avatar ${avatarClass}">${avatarText}</div>` : ''}
-      <span>${isUser ? 'You' : 'OmniClient'}</span>
-      ${isUser ? `<div class="message-avatar ${avatarClass}">${avatarText}</div>` : ''}
-    </div>
-    <div class="message-bubble ${bubbleClass}">
-      <div class="message-content">${content ? renderMarkdown(content) : ''}</div>${streaming ? '<span class="stream-cursor"></span>' : ''}
-    </div>
-    <div class="message-actions">
-      ${!isUser ? `<button class="msg-action-btn regen-btn" title="Regenerate">↻ Regenerate</button>` : ''}
-      ${msgId ? `<button class="msg-action-btn bookmark-btn ${bookmarked ? 'bookmarked' : ''}" data-id="${msgId}" title="Bookmark">
-        ${bookmarked ? '🔖 Bookmarked' : '🔖 Bookmark'}
-      </button>` : ''}
-      ${msgId ? `<button class="msg-action-btn delete-msg-btn" data-id="${msgId}" title="Delete">🗑️</button>` : ''}
-      <button class="msg-action-btn copy-msg-btn" title="Copy">📋 Copy</button>
-    </div>`;
-
-  container.appendChild(wrapper);
-
-  // Highlight code
-  if (content) {
-    Prism.highlightAllUnder(wrapper);
-    wrapCodeBlocks(wrapper.querySelector('.message-content'));
-  }
-
-  // Action listeners
-  wrapper.querySelector('.copy-msg-btn')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(wrapper.querySelector('.message-content')?.innerText || content || '');
-    showToast('Copied to clipboard', 'success');
-  });
-
-  wrapper.querySelector('.regen-btn')?.addEventListener('click', async () => {
-    const prevUser = wrapper.previousElementSibling;
-    if (prevUser) {
-      const prevContent = prevUser.querySelector('.message-content')?.innerText || state.lastUserMessage;
-      if (prevContent) {
-        wrapper.remove();
-        $('message-input').value = prevContent;
-        await sendMessage();
-      }
-    }
-  });
-
-  wrapper.querySelector('.bookmark-btn')?.addEventListener('click', async (e) => {
-    const id = e.currentTarget.dataset.id;
-    const res = await fetch(`/api/messages/${id}/bookmark`, {method: 'PATCH'});
-    const data = await res.json();
-    e.currentTarget.className = `msg-action-btn bookmark-btn ${data.bookmarked ? 'bookmarked' : ''}`;
-    e.currentTarget.textContent = data.bookmarked ? '🔖 Bookmarked' : '🔖 Bookmark';
-    showToast(data.bookmarked ? 'Message bookmarked' : 'Bookmark removed', 'success');
-  });
-
-  wrapper.querySelector('.delete-msg-btn')?.addEventListener('click', async (e) => {
-    const id = e.currentTarget.dataset.id;
-    if (confirm('Delete this message?')) {
-      await fetch(`/api/messages/${id}`, {method: 'DELETE'});
-      wrapper.remove();
-      showToast('Message deleted', 'success');
-    }
-  });
-
+  wrapper.innerHTML = `<div class="message-meta"><span class="message-role"><i data-lucide="${isUser ? 'user' : 'sparkles'}"></i>${isUser ? 'You' : 'OmniClient'}</span><span>${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div><div class="message-bubble ${isUser ? 'user' : 'assistant'}"><div class="message-content"></div>${streaming ? '<span class="stream-cursor"></span>' : ''}</div><div class="message-actions">${!isUser ? '<button class="msg-action-btn regen-btn" type="button"><i data-lucide="rotate-ccw"></i>Regenerate</button>' : ''}${msgId ? `<button class="msg-action-btn bookmark-btn ${bookmarked ? 'bookmarked' : ''}" data-id="${msgId}" type="button"><i data-lucide="bookmark"></i>${bookmarked ? 'Bookmarked' : 'Bookmark'}</button><button class="msg-action-btn delete-msg-btn" data-id="${msgId}" type="button"><i data-lucide="trash-2"></i>Delete</button>` : ''}<button class="msg-action-btn copy-msg-btn" type="button"><i data-lucide="copy"></i>Copy</button></div>`;
+  $('messages-container').appendChild(wrapper);
+  renderMessageContent(wrapper.querySelector('.message-content'), cleanDisplayContent(content || ''));
+  bindMessageActions(wrapper);
+  refreshIcons();
+  scrollToBottom();
   return wrapper;
 }
 
-// ── Markdown renderer ────────────────────────────────────────
+function renderMessageContent(el, content) {
+  if (!el) return;
+  el.innerHTML = renderMarkdown(content || '');
+  enhanceMarkdown(el.parentElement || el);
+}
+
 function renderMarkdown(text) {
   if (!text) return '';
   const blocks = [];
-  let html = escapeHtml(text);
-
-  html = html.replace(/```([\w#+.-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-    const language = (lang || 'text').trim() || 'text';
-    const token = `@@CODE_${blocks.length}@@`;
-    blocks.push(`<div class="code-block-wrapper">
-      <div class="code-block-header">
-        <span>${escapeHtml(language)}</span>
-        <button class="code-copy-btn" data-code="${encodeURIComponent(code.trim())}">Copy</button>
-      </div>
-      <pre class="language-${escapeHtml(language)}"><code class="language-${escapeHtml(language)}">${escapeHtml(code.trim())}</code></pre>
-    </div>`);
+  let source = text.replace(/```mermaid\n([\s\S]*?)```/gi, (_, graph) => {
+    const token = `@@BLOCK_${blocks.length}@@`;
+    blocks.push(`<div class="mermaid">${escapeHtml(graph.trim())}</div>`);
     return token;
   });
-
-  html = html
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|\s)\*([^*]+)\*/g, '$1<em>$2</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/^---+$/gm, '<hr style="border-color:var(--color-border-light);margin:12px 0">');
-
-  html = html.replace(/^(?:[-*] .+(?:\n|$))+/gm, (match) => {
-    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^[-*] /, '')}</li>`).join('');
-    return `<ul>${items}</ul>`;
+  source = source.replace(/```([\w#+.-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const language = (lang || 'text').trim() || 'text';
+    const token = `@@BLOCK_${blocks.length}@@`;
+    blocks.push(`<div class="code-block-wrapper"><div class="code-block-header"><span>${escapeHtml(language)}</span><span class="code-actions"><button class="code-copy-btn" data-code="${encodeURIComponent(code.trim())}" type="button">Copy</button><button class="code-download-btn" data-lang="${escapeHtml(language)}" data-code="${encodeURIComponent(code.trim())}" type="button">Download</button></span></div><pre class="language-${escapeHtml(language)}"><code class="language-${escapeHtml(language)}">${escapeHtml(code.trim())}</code></pre></div>`);
+    return token;
   });
-  html = html.replace(/^(?:\d+\. .+(?:\n|$))+/gm, (match) => {
-    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\d+\. /, '')}</li>`).join('');
-    return `<ol>${items}</ol>`;
-  });
-
-  html = html.split(/\n{2,}/).map(part => {
-    const trimmed = part.trim();
-    if (!trimmed) return '';
-    if (/^<(h\d|ul|ol|div|hr)/.test(trimmed)) return trimmed;
-    return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
-  }).join('');
-
-  blocks.forEach((block, index) => {
-    html = html.replace(`@@CODE_${index}@@`, block);
-  });
+  let html = window.marked ? marked.parse(source) : fallbackMarkdown(source);
+  blocks.forEach((block, index) => { html = html.replace(`@@BLOCK_${index}@@`, block); });
   return html;
 }
 
-function wrapCodeBlocks(el) {
-  if (!el) return;
-  el.querySelectorAll('.code-copy-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const code = decodeURIComponent(btn.dataset.code);
-      navigator.clipboard.writeText(code);
-      btn.textContent = 'Copied!';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
-    });
+async function enhanceMarkdown(scope) {
+  if (!scope) return;
+  if (window.Prism) Prism.highlightAllUnder(scope);
+  scope.querySelectorAll('.code-copy-btn').forEach((btn) => btn.onclick = () => {
+    navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code || ''));
+    btn.textContent = 'Copied';
+    setTimeout(() => btn.textContent = 'Copy', 1400);
+  });
+  scope.querySelectorAll('.code-download-btn').forEach((btn) => btn.onclick = () => {
+    const lang = (btn.dataset.lang || 'txt').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'txt';
+    const extension = ({ javascript: 'js', typescript: 'ts', python: 'py', bash: 'sh', json: 'json', yaml: 'yml', sql: 'sql' })[lang] || 'txt';
+    const blob = new Blob([decodeURIComponent(btn.dataset.code || '')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `omniclient-code.${extension}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+  if (window.renderMathInElement) {
+    try { renderMathInElement(scope, { delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}] }); } catch {}
+  }
+  if (window.mermaid) {
+    try { await mermaid.run({ nodes: scope.querySelectorAll('.mermaid') }); } catch {}
+  }
+}
+
+function fallbackMarkdown(text) { return escapeHtml(text).split(/\n{2,}/).map((part) => `<p>${part.replace(/\n/g, '<br>')}</p>`).join(''); }
+
+function bindMessageActions(wrapper) {
+  wrapper.querySelector('.copy-msg-btn')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(wrapper.querySelector('.message-content')?.innerText || '');
+    showToast('Copied to clipboard', 'success');
+  });
+  wrapper.querySelector('.regen-btn')?.addEventListener('click', async () => {
+    const prev = wrapper.previousElementSibling?.querySelector('.message-content')?.innerText;
+    if (prev) { wrapper.remove(); $('message-input').value = prev; await sendMessage(); }
+  });
+  wrapper.querySelector('.bookmark-btn')?.addEventListener('click', async (e) => {
+    const id = e.currentTarget.dataset.id;
+    const res = await fetch(`/api/messages/${id}/bookmark`, { method: 'PATCH' });
+    const data = await res.json();
+    e.currentTarget.classList.toggle('bookmarked', Boolean(data.bookmarked));
+    e.currentTarget.innerHTML = `<i data-lucide="bookmark"></i>${data.bookmarked ? 'Bookmarked' : 'Bookmark'}`;
+    refreshIcons();
+  });
+  wrapper.querySelector('.delete-msg-btn')?.addEventListener('click', async (e) => {
+    if (!confirm('Delete this message?')) return;
+    await fetch(`/api/messages/${e.currentTarget.dataset.id}`, { method: 'DELETE' });
+    wrapper.remove();
   });
 }
 
-// ── Typing indicator ─────────────────────────────────────────
-function showTypingIndicator() {
-  const id = 'typing-' + Date.now();
-  const container = $('messages-container');
-  const div = document.createElement('div');
-  div.id = id;
-  div.className = 'message-wrapper assistant';
-  div.innerHTML = `
-    <div class="message-meta">
-      <div class="message-avatar ai-avatar">✦</div>
-      <span>OmniClient</span>
-    </div>
-    <div class="message-bubble assistant">
-      <div class="typing-indicator">
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-        <div class="typing-dot"></div>
-      </div>
-    </div>`;
-  container.appendChild(div);
-  scrollToBottom();
-  return id;
+function handleFileSelection(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  state.pendingFiles = files.map((file) => ({ name: file.name, size: file.size, type: file.type || 'unknown' }));
+  const summary = state.pendingFiles.map((file) => `${file.name} (${formatFileSize(file.size)})`).join(', ');
+  const input = $('message-input');
+  const note = `[Attached files: ${summary}]\n`;
+  if (!input.value.includes(note)) input.value = note + input.value;
+  renderFilePreview();
+  autoResizeTextarea();
+  showToast(`${files.length} file${files.length > 1 ? 's' : ''} attached`, 'success');
+}
+function renderFilePreview() {
+  const row = $('file-preview-row');
+  if (!row) return;
+  row.classList.toggle('hidden', !state.pendingFiles.length);
+  row.innerHTML = state.pendingFiles.map((file) => `<span class="file-chip"><i data-lucide="file"></i>${escapeHtml(file.name)}<small>${formatFileSize(file.size)}</small></span>`).join('');
+  refreshIcons();
+}
+function formatFileSize(bytes) { if (!bytes) return '0 B'; const units = ['B','KB','MB','GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1); return `${(bytes / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`; }
+function setupDropZone() {
+  const shell = $('composer-shell');
+  if (!shell) return;
+  ['dragenter', 'dragover'].forEach((type) => shell.addEventListener(type, (e) => { e.preventDefault(); shell.classList.add('drag-over'); }));
+  ['dragleave', 'drop'].forEach((type) => shell.addEventListener(type, () => shell.classList.remove('drag-over')));
+  shell.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) handleFileSelection({ target: { files: e.dataTransfer.files } }); });
+  document.addEventListener('paste', (e) => { const files = Array.from(e.clipboardData?.files || []); if (files.length) handleFileSelection({ target: { files } }); });
+}
+function toggleVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return showToast('Voice input is not supported in this browser.', 'warning');
+  if (state.speechRecognition) { state.speechRecognition.stop(); return; }
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = true;
+  state.speechRecognition = recognition;
+  $('voice-btn')?.classList.add('recording');
+  let base = $('message-input').value;
+  recognition.onresult = (event) => {
+    let text = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) text += event.results[i][0]?.transcript || '';
+    $('message-input').value = `${base}${base ? ' ' : ''}${text}`;
+    autoResizeTextarea();
+  };
+  recognition.onend = () => { state.speechRecognition = null; $('voice-btn')?.classList.remove('recording'); };
+  recognition.start();
+}
+function toggleFeature(feature) {
+  if (feature === 'search') state.searchEnabled = !state.searchEnabled;
+  if (feature === 'thinking') state.thinkingEnabled = !state.thinkingEnabled;
+  if (feature === 'memory') state.memoryEnabled = !state.memoryEnabled;
+  syncFeatureButtons();
+}
+function syncFeatureButtons() {
+  $('search-toggle-btn')?.classList.toggle('active', state.searchEnabled);
+  $('composer-search-btn')?.classList.toggle('active', state.searchEnabled);
+  $('thinking-toggle-btn')?.classList.toggle('active', state.thinkingEnabled);
+  $('composer-thinking-btn')?.classList.toggle('active', state.thinkingEnabled);
+  $('memory-toggle-btn')?.classList.toggle('active', state.memoryEnabled);
+  $('search-toggle-btn')?.setAttribute('aria-pressed', String(state.searchEnabled));
+  $('thinking-toggle-btn')?.setAttribute('aria-pressed', String(state.thinkingEnabled));
+  $('memory-toggle-btn')?.setAttribute('aria-pressed', String(state.memoryEnabled));
 }
 
-function removeTypingIndicator(id) {
-  const el = $(id);
-  if (el) el.remove();
+function openCommandPalette() { $('command-overlay').classList.add('open'); $('command-input').value = ''; renderCommandResults(); setTimeout(() => $('command-input')?.focus(), 30); }
+function closeCommandPalette() { $('command-overlay').classList.remove('open'); }
+function renderCommandResults() {
+  const q = ($('command-input')?.value || '').toLowerCase();
+  const commands = [
+    { icon: 'message-square', title: 'New Chat', action: () => startNewChat() },
+    { icon: 'globe', title: 'Search Web', action: () => { if (!state.searchEnabled) toggleFeature('search'); $('message-input').focus(); } },
+    { icon: 'database', title: 'Search Memory', action: () => { if (!state.memoryEnabled) toggleFeature('memory'); } },
+    { icon: 'file-search', title: 'Search Files and PDFs', action: () => $('file-input').click() },
+    { icon: 'github', title: 'Search GitHub', action: () => setPromptPrefix('GitHub: ') },
+    { icon: 'youtube', title: 'Search YouTube', action: () => setPromptPrefix('YouTube: ') },
+    { icon: 'book-open', title: 'Search Documentation', action: () => setPromptPrefix('Documentation: ') },
+    ...state.conversations.map((c) => ({ icon: 'message-square', title: c.title || 'Conversation', action: () => loadConversation(c.id) })),
+  ].filter((item) => item.title.toLowerCase().includes(q));
+  $('command-status').textContent = q ? `Showing ${commands.length} result${commands.length === 1 ? '' : 's'}.` : 'Search chats, files, projects, memory, web, GitHub, YouTube, PDFs, and documentation.';
+  $('command-results').innerHTML = commands.slice(0, 14).map((item, i) => `<div class="command-result" data-index="${i}"><i data-lucide="${item.icon}"></i><span>${escapeHtml(item.title)}</span></div>`).join('');
+  $('command-results').querySelectorAll('.command-result').forEach((el) => el.addEventListener('click', () => { commands[Number(el.dataset.index)].action(); closeCommandPalette(); }));
+  refreshIcons();
 }
+function setPromptPrefix(prefix) { $('message-input').value = prefix + $('message-input').value; $('message-input').focus(); }
 
-// ── Agent Panel ──────────────────────────────────────────────
-function toggleAgentPanel() {
-  state.agentPanelOpen = !state.agentPanelOpen;
-  $('agent-panel').classList.toggle('open', state.agentPanelOpen);
-  $('agent-panel-btn').classList.toggle('active', state.agentPanelOpen);
-  if (state.agentPanelOpen) updateAgentPanel();
-}
-
-function closeAgentPanel() {
-  state.agentPanelOpen = false;
-  $('agent-panel').classList.remove('open');
-  $('agent-panel-btn').classList.remove('active');
-}
-
+function toggleAgentPanel() { state.agentPanelOpen = !state.agentPanelOpen; $('agent-panel').classList.toggle('open', state.agentPanelOpen); if (state.agentPanelOpen) updateAgentPanel(); }
+function closeAgentPanel() { state.agentPanelOpen = false; $('agent-panel').classList.remove('open'); }
 async function updateAgentPanel() {
-  if (!state.currentAgentId || !state.agentPanelOpen) return;
+  if (!state.currentAgentId) return;
   try {
     const res = await fetch(`/api/agents/${state.currentAgentId}`);
     const agent = await res.json();
-
-    // Profile
-    $('panel-agent-name').textContent = agent.name;
-    $('panel-agent-model').textContent = agent.model;
-    $('panel-agent-avatar').textContent = agent.name.charAt(0).toUpperCase();
-
-    // Controls
+    $('panel-agent-name').textContent = agent.name || 'Agent';
+    $('panel-agent-model').textContent = agent.model || 'Adaptive model';
+    $('panel-agent-avatar').textContent = (agent.name || 'O').charAt(0).toUpperCase();
     $('model-select').value = agent.model;
-    $('temp-slider').value = agent.temperature;
-    $('temp-value').textContent = agent.temperature.toFixed(1);
-    $('system-prompt-editor').value = agent.system_prompt;
-
-    // Tools
-    $('toggle-search').checked = agent.enable_search;
-    $('toggle-db').checked = agent.enable_db_query;
-    $('toggle-code').checked = agent.enable_code_gen;
-
-    // Load memories
-    if (state.currentConversationId) {
-      await loadMemoryPanel();
-    }
-  } catch (e) {
-    console.error('Failed to update agent panel:', e);
-  }
+    $('temp-slider').value = agent.temperature ?? 0.7;
+    $('temp-value').textContent = Number(agent.temperature ?? 0.7).toFixed(1);
+    $('system-prompt-editor').value = agent.system_prompt || '';
+    $('toggle-search').checked = Boolean(agent.enable_search);
+    $('toggle-db').checked = Boolean(agent.enable_db_query);
+    $('toggle-code').checked = Boolean(agent.enable_code_gen);
+    if (state.currentConversationId) loadMemoryPanel();
+  } catch {}
 }
-
 async function saveAgentSettings() {
   if (!state.currentAgentId) return;
-  const payload = {
-    model: $('model-select').value,
-    temperature: parseFloat($('temp-slider').value),
-    system_prompt: $('system-prompt-editor').value,
-    enable_search: $('toggle-search').checked,
-    enable_db_query: $('toggle-db').checked,
-    enable_code_gen: $('toggle-code').checked,
-  };
-  try {
-    const res = await fetch(`/api/agents/${state.currentAgentId}`, {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      showToast('Agent settings saved!', 'success');
-    }
-  } catch (e) {
-    showToast('Failed to save settings', 'error');
-  }
+  const payload = { model: $('model-select').value, temperature: Number($('temp-slider').value), system_prompt: $('system-prompt-editor').value, enable_search: $('toggle-search').checked, enable_db_query: $('toggle-db').checked, enable_code_gen: $('toggle-code').checked };
+  const res = await fetch(`/api/agents/${state.currentAgentId}`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+  showToast(res.ok ? 'Agent settings saved' : 'Failed to save agent settings', res.ok ? 'success' : 'error');
+  await loadAgents();
 }
 
-// ── Memory Panel ─────────────────────────────────────────────
 async function loadMemoryPanel() {
-  if (!state.currentConversationId) {
-    $('memory-list').innerHTML = '<div class="empty-state">Start a conversation to see memories.</div>';
-    return;
-  }
+  if (!state.currentConversationId) { $('memory-list').innerHTML = '<div class="sidebar-empty">Start a conversation to see memory.</div>'; return; }
   try {
     const res = await fetch(`/api/memory/${state.currentConversationId}`);
     const data = await res.json();
-    renderMemoryList(data.memories);
-  } catch (e) {
-    $('memory-list').innerHTML = '<div class="empty-state">Failed to load memories.</div>';
-  }
+    renderMemoryList(data.memories || []);
+  } catch { $('memory-list').innerHTML = '<div class="sidebar-empty">Failed to load memory.</div>'; }
 }
-
 function renderMemoryList(memories) {
-  const el = $('memory-list');
-  if (!memories || memories.length === 0) {
-    el.innerHTML = '<div class="empty-state">No memories stored yet.</div>';
-    return;
-  }
-  el.innerHTML = memories.map(m => `
-    <div class="memory-item" data-id="${m.id}">
-      <div class="memory-item-key">${escapeHtml(m.key)}</div>
-      <div class="memory-item-value">${escapeHtml(m.value)}</div>
-      <div class="memory-item-actions">
-        <button class="memory-btn del" data-id="${m.id}" title="Delete">✕</button>
-      </div>
-    </div>`).join('');
-
-  el.querySelectorAll('.memory-btn.del').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.id;
-      await fetch(`/api/memory/entry/${id}`, {method: 'DELETE'});
-      await loadMemoryPanel();
-      showToast('Memory deleted', 'success');
-    });
-  });
+  $('memory-list').innerHTML = memories.length ? memories.map((m) => `<div class="memory-item"><div class="memory-item-key">${escapeHtml(m.key)}</div><div class="memory-item-value">${escapeHtml(m.value)}</div><button class="memory-btn del" data-id="${m.id}" type="button"><i data-lucide="x"></i></button></div>`).join('') : '<div class="sidebar-empty">No memories stored yet.</div>';
+  $('memory-list').querySelectorAll('.memory-btn.del').forEach((btn) => btn.addEventListener('click', async () => { await fetch(`/api/memory/entry/${btn.dataset.id}`, { method: 'DELETE' }); await loadMemoryPanel(); }));
+  refreshIcons();
 }
-
 async function addMemoryEntry() {
-  if (!state.currentConversationId) {
-    showToast('Start a conversation first', 'warning');
-    return;
-  }
-  const key = prompt('Memory key (e.g., "User project"):');
+  if (!state.currentConversationId) return showToast('Start a conversation first', 'warning');
+  const key = prompt('Memory key');
   if (!key) return;
-  const value = prompt('Memory value:');
+  const value = prompt('Memory value');
   if (!value) return;
-
-  await fetch(`/api/memory/${state.currentConversationId}`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({key, value, importance_score: 1.5}),
-  });
+  await fetch(`/api/memory/${state.currentConversationId}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ key, value, importance_score: 1.5 }) });
   await loadMemoryPanel();
-  showToast('Memory added!', 'success');
 }
 
-// ── Deploy Guide ─────────────────────────────────────────────
 async function generateDeployGuide() {
-  const projectType = prompt('Project type (e.g., FastAPI, Flask, Streamlit, Next.js):');
+  const projectType = prompt('Project type, for example FastAPI, Next.js, or Django');
   if (!projectType) return;
-  showToast('Generating deployment guide...', 'info');
-  try {
-    const res = await fetch('/api/deploy/guide', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({project_type: projectType, context: ''}),
-    });
-    const data = await res.json();
-    if (!state.currentConversationId) startNewChat();
-    appendMessage('assistant', data.guide);
-    scrollToBottom();
-  } catch (e) {
-    showToast('Failed to generate guide', 'error');
-  }
+  const res = await fetch('/api/deploy/guide', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ project_type: projectType, context: '' }) });
+  const data = await res.json();
+  if (!state.currentConversationId) startNewChat();
+  appendMessage('assistant', data.guide || 'No guide returned.');
 }
 
-// ── New Agent Wizard ─────────────────────────────────────────
+async function exportConversation() {
+  if (!state.currentConversationId) return showToast('No active conversation', 'warning');
+  const format = confirm('Export as Markdown? Cancel for JSON.') ? 'markdown' : 'json';
+  const a = document.createElement('a');
+  a.href = `/api/conversations/${state.currentConversationId}/export?fmt=${format}`;
+  a.download = `conversation_${state.currentConversationId}.${format === 'markdown' ? 'md' : 'json'}`;
+  a.click();
+}
+function shareConversation() { navigator.clipboard.writeText(location.href); showToast('Conversation link copied', 'success'); }
+async function renameConversation() {
+  if (!state.currentConversationId) return showToast('Start a conversation first', 'warning');
+  const title = prompt('Conversation title', $('chat-title').textContent || 'New Conversation');
+  if (!title) return;
+  const res = await fetch(`/api/conversations/${state.currentConversationId}`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ title }) });
+  if (res.ok) { $('chat-title').textContent = title; await loadConversations(); }
+}
+
 let wizardStep = 1;
-let wizardData = { capabilities: [] };
-
-function openNewAgentModal() {
-  wizardStep = 1;
-  wizardData = { capabilities: [] };
-  updateWizard();
-  openModal('new-agent-modal');
-}
-
+function openNewAgentModal() { wizardStep = 1; updateWizard(); openModal('new-agent-modal'); }
 function updateWizard() {
   for (let i = 1; i <= 3; i++) {
-    const page = $(`wizard-page-${i}`);
-    const step = document.querySelector(`.wizard-step[data-step="${i}"]`);
-    page.classList.toggle('active', i === wizardStep);
-    if (step) {
-      step.classList.toggle('active', i === wizardStep);
-      step.classList.toggle('done', i < wizardStep);
-    }
+    $(`wizard-page-${i}`)?.classList.toggle('active', i === wizardStep);
+    document.querySelector(`.wizard-step[data-step="${i}"]`)?.classList.toggle('active', i === wizardStep);
+    document.querySelector(`.wizard-step[data-step="${i}"]`)?.classList.toggle('done', i < wizardStep);
   }
   $('wizard-back-btn').style.display = wizardStep === 1 ? 'none' : '';
-  $('wizard-next-btn').textContent = wizardStep === 3 ? '✓ Create Agent' : 'Next →';
+  $('wizard-next-btn').textContent = wizardStep === 3 ? 'Create Agent' : 'Next';
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-  // Capability chip selection
-  document.querySelectorAll('.cap-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      chip.classList.toggle('selected');
-      const cap = chip.dataset.cap;
-      if (chip.classList.contains('selected')) {
-        wizardData.capabilities.push(cap);
-      } else {
-        wizardData.capabilities = wizardData.capabilities.filter(c => c !== cap);
-      }
-    });
-  });
-
-  $('wizard-next-btn').addEventListener('click', async () => {
-    if (wizardStep === 1) {
-      const name = $('wizard-agent-name').value.trim();
-      const purpose = $('wizard-agent-purpose').value.trim();
-      if (!name || !purpose) { showToast('Name and purpose are required', 'warning'); return; }
-      wizardData.name = name;
-      wizardData.purpose = purpose;
-      wizardStep = 2;
-      updateWizard();
-    } else if (wizardStep === 2) {
-      wizardStep = 3;
-      updateWizard();
-    } else if (wizardStep === 3) {
-      wizardData.tone = $('wizard-tone').value;
-      wizardData.model = $('wizard-model').value;
-      wizardData.description = $('wizard-agent-desc').value;
-      await createNewAgent();
-    }
-  });
-
-  $('wizard-back-btn').addEventListener('click', () => {
-    if (wizardStep > 1) { wizardStep--; updateWizard(); }
-  });
-
-  $('close-agent-modal-btn').addEventListener('click', () => closeModal('new-agent-modal'));
-});
-
-async function createNewAgent() {
-  try {
-    showToast('Creating agent...', 'info');
-    const res = await fetch('/api/agents', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name: wizardData.name,
-        description: wizardData.description || '',
-        purpose: wizardData.purpose,
-        capabilities: wizardData.capabilities,
-        tone: wizardData.tone,
-        model: wizardData.model || 'cohere/north-mini-code:free',
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      showToast(`Error: ${err.detail}`, 'error');
-      return;
-    }
-
-    const agent = await res.json();
-    await loadAgents();
-    state.currentAgentId = agent.id;
-    $('agent-select').value = agent.id;
-    closeModal('new-agent-modal');
-    showToast(`Agent "${agent.name}" created!`, 'success');
-
-    // Open the agent panel to show the new agent
-    if (!state.agentPanelOpen) toggleAgentPanel();
-    updateAgentPanel();
-  } catch (e) {
-    showToast('Failed to create agent: ' + e.message, 'error');
-  }
+async function wizardNext() {
+  if (wizardStep < 3) { wizardStep += 1; updateWizard(); return; }
+  const capabilities = Array.from(document.querySelectorAll('.cap-chip.selected')).map((chip) => chip.dataset.cap);
+  const payload = { name: $('wizard-agent-name').value.trim(), description: $('wizard-agent-desc').value.trim(), purpose: $('wizard-agent-purpose').value.trim(), capabilities, tone: $('wizard-tone').value, model: $('wizard-model').value };
+  if (!payload.name || !payload.purpose) return showToast('Agent name and purpose are required', 'warning');
+  const res = await fetch('/api/agents', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+  if (!res.ok) return showToast('Failed to create agent', 'error');
+  const agent = await res.json();
+  closeModal('new-agent-modal');
+  await loadAgents();
+  selectAgent(agent.id);
+  showToast('Agent created', 'success');
 }
+function wizardBack() { if (wizardStep > 1) { wizardStep -= 1; updateWizard(); } }
 
-// ── DB Query Modal ───────────────────────────────────────────
 let lastQueryResults = null;
-
 async function runDbQuery() {
   const sql = $('db-query-input').value.trim();
   if (!sql) return;
-
-  try {
-    const res = await fetch('/api/query-db', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({sql}),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      $('db-results').innerHTML = `<div class="empty-state" style="color:var(--color-error)">${data.detail}</div>`;
-      return;
-    }
-
-    lastQueryResults = data;
-    $('db-row-count').textContent = `${data.row_count} rows`;
-    $('export-csv-btn').classList.remove('hidden');
-
-    if (data.rows.length === 0) {
-      $('db-results').innerHTML = '<div class="empty-state">Query returned no results.</div>';
-      return;
-    }
-
-    const thead = `<tr>${data.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
-    const tbody = data.rows.map(row =>
-      `<tr>${data.columns.map(c => `<td>${escapeHtml(String(row[c] ?? ''))}</td>`).join('')}</tr>`
-    ).join('');
-
-    $('db-results').innerHTML = `
-      <div class="db-table-wrapper">
-        <table class="db-table">
-          <thead>${thead}</thead>
-          <tbody>${tbody}</tbody>
-        </table>
-      </div>`;
-
-    // Query explanation toggle
-    $('query-explanation').textContent = `This query selects data using: ${sql.substring(0, 100)}...`;
-  } catch (e) {
-    $('db-results').innerHTML = `<div class="empty-state" style="color:var(--color-error)">Error: ${e.message}</div>`;
-  }
+  const res = await fetch('/api/query-db', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ sql }) });
+  const data = await res.json();
+  if (!res.ok) { $('db-results').innerHTML = `<div class="sidebar-empty">${escapeHtml(data.detail || 'Query failed')}</div>`; return; }
+  lastQueryResults = data;
+  $('db-row-count').textContent = `${data.row_count} rows`;
+  $('export-csv-btn').classList.remove('hidden');
+  if (!data.rows?.length) { $('db-results').innerHTML = '<div class="sidebar-empty">Query returned no rows.</div>'; return; }
+  const head = `<tr>${data.columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
+  const rows = data.rows.map((row) => `<tr>${data.columns.map((c) => `<td>${escapeHtml(String(row[c] ?? ''))}</td>`).join('')}</tr>`).join('');
+  $('db-results').innerHTML = `<table class="db-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+  $('query-explanation').textContent = `Read-only query executed: ${sql.slice(0, 140)}`;
 }
-
 function exportQueryCSV() {
   if (!lastQueryResults) return;
-  const {columns, rows} = lastQueryResults;
-  const csvRows = [columns.join(',')];
-  rows.forEach(row => {
-    csvRows.push(columns.map(c => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','));
-  });
-  const blob = new Blob([csvRows.join('\n')], {type: 'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'query_results.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('Exported as CSV!', 'success');
+  const { columns, rows } = lastQueryResults;
+  const csv = [columns.join(','), ...rows.map((row) => columns.map((c) => `"${String(row[c] ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a'); a.href = url; a.download = 'query-results.csv'; a.click(); URL.revokeObjectURL(url);
 }
 
-// ── Export Conversation ──────────────────────────────────────
-async function exportConversation() {
-  if (!state.currentConversationId) {
-    showToast('No active conversation', 'warning');
-    return;
-  }
-  const fmt = confirm('Export as Markdown?\n(Cancel for JSON)') ? 'markdown' : 'json';
-  const ext = fmt === 'markdown' ? 'md' : 'json';
-  const url = `/api/conversations/${state.currentConversationId}/export?fmt=${fmt}`;
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `conversation_${state.currentConversationId}.${ext}`;
-  a.click();
-  showToast('Exported!', 'success');
-}
-
-// ── Settings Modal ────────────────────────────────────────────
-function openSettingsModal() {
-  // Pre-fill saved API key hint
-  openModal('settings-modal');
-}
-
-function saveSettings() {
-  showToast('Settings are managed via the .env file on the server.', 'info');
-  closeModal('settings-modal');
-}
-
+function openModal(id) { $(`${id}-overlay`)?.classList.add('open'); refreshIcons(); }
+function closeModal(id) { $(`${id}-overlay`)?.classList.remove('open'); }
+function closeOnOverlayClick(e) { if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open'); if (e.target.id === 'command-overlay') closeCommandPalette(); }
+function activateSettingsTab(tab) { document.querySelectorAll('.settings-tab').forEach((el) => el.classList.toggle('active', el.dataset.tab === tab)); document.querySelectorAll('.settings-panel').forEach((el) => el.classList.toggle('active', el.dataset.panel === tab)); }
+function saveSettings() { showToast('Settings saved locally where supported', 'success'); closeModal('settings-modal'); }
 async function resetMemory() {
-  if (!state.currentConversationId) {
-    showToast('No active conversation', 'warning');
-    return;
-  }
+  if (!state.currentConversationId) return showToast('No active conversation', 'warning');
   if (!confirm('Reset all memories for this conversation?')) return;
-  try {
-    const res = await fetch(`/api/memory/${state.currentConversationId}`);
-    const data = await res.json();
-    for (const m of data.memories) {
-      await fetch(`/api/memory/entry/${m.id}`, {method: 'DELETE'});
-    }
-    await loadMemoryPanel();
-    showToast('Memories reset!', 'success');
-  } catch (e) {
-    showToast('Failed to reset memories', 'error');
-  }
+  const res = await fetch(`/api/memory/${state.currentConversationId}`);
+  const data = await res.json();
+  for (const m of data.memories || []) await fetch(`/api/memory/entry/${m.id}`, { method: 'DELETE' });
+  await loadMemoryPanel();
 }
 
-// ── Modal helpers ─────────────────────────────────────────────
-function openModal(id) {
-  $(`${id}-overlay`).classList.add('open');
+function handleGlobalKeys(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openCommandPalette(); }
+  if (e.key === 'Escape') { closeCommandPalette(); document.querySelectorAll('.modal-overlay.open').forEach((el) => el.classList.remove('open')); }
+  if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'n' && document.activeElement === document.body) startNewChat();
 }
 
-function closeModal(id) {
-  $(`${id}-overlay`).classList.remove('open');
-}
-
-// Close modals on overlay click
-document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
-  }
-});
-
-// ── Toasts ────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
-  const container = $('toast-container');
   const toast = document.createElement('div');
-  const icons = {success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️'};
   toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${escapeHtml(message)}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.style.animation = 'toast-out 0.25s ease forwards';
-    setTimeout(() => toast.remove(), 250);
-  }, 3500);
+  toast.innerHTML = `<i data-lucide="${type === 'success' ? 'check-circle-2' : type === 'error' ? 'circle-alert' : type === 'warning' ? 'triangle-alert' : 'info'}"></i><span>${escapeHtml(message)}</span>`;
+  $('toast-container').appendChild(toast);
+  refreshIcons();
+  setTimeout(() => { toast.classList.add('leaving'); setTimeout(() => toast.remove(), 200); }, 3200);
 }
-
-// ── Utilities ─────────────────────────────────────────────────
 function scrollToBottom(force = false) {
   const container = $('messages-container');
   if (!container) return;
   const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-  if (!force && distance > 180) return;
-  requestAnimationFrame(() => {
-    container.scrollTo({top: container.scrollHeight, behavior: force ? 'auto' : 'smooth'});
-  });
+  if (!force && distance > 240) return;
+  requestAnimationFrame(() => container.scrollTo({ top: container.scrollHeight, behavior: force ? 'auto' : 'smooth' }));
 }
-
-function escapeHtml(text) {
-  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
-  return String(text).replace(/[&<>"']/g, m => map[m]);
-}
-
-function autoResizeTextarea() {
-  const textarea = $('message-input');
-  textarea.addEventListener('input', () => {
-    textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
-  });
-}
-
+function autoResizeTextarea() { const textarea = $('message-input'); if (!textarea) return; textarea.style.height = 'auto'; textarea.style.height = `${Math.min(textarea.scrollHeight, 190)}px`; }
+function stripHtmlTags(text) { return String(text || '').replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'"); }
+function cleanDisplayContent(text) { return stripHtmlTags(text).replace(/\[TOOL:[^\]]*\]/g, '').replace(/\[THINKING:[^\]]*\]/g, '').replace(/\n{3,}/g, '\n\n'); }
+function escapeHtml(text) { return String(text ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m])); }
 
 
 
