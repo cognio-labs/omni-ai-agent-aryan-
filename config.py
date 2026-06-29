@@ -1,4 +1,4 @@
-﻿"""
+"""
 config.py â€” Application configuration via pydantic-settings.
 Reads values from .env automatically.
 """
@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     enable_reasoning: bool = Field(default_factory=lambda: os.getenv("ENABLE_REASONING", "true").lower() in ("true", "1", "yes"))
     temperature: float = Field(default_factory=lambda: float(os.getenv("TEMPERATURE", "0.7")))
     max_tokens: int = Field(default_factory=lambda: int(os.getenv("MAX_TOKENS", "4096")))
+    # E2B Sandbox
+    e2b_api_key: str = Field(default_factory=lambda: os.getenv("E2B_API_KEY", ""), description="E2B API key")
+    e2b_template_id: str = Field(default_factory=lambda: os.getenv("E2B_TEMPLATE_ID", ""), description="Optional E2B sandbox template ID")
 
     # Application
     app_name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "OmniClient AI"))
@@ -62,5 +65,6 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
 
 
