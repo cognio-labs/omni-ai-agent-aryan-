@@ -106,3 +106,13 @@ class Presentation(Base):
         nullable=True, index=True,
     )
     created_at      = Column(DateTime, default=datetime.utcnow)
+
+
+class Integration(Base):
+    __tablename__ = "integrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(50), nullable=False, unique=True) # "gmail", "slack", "n8n", "whatsapp"
+    tokens_json = Column(Text, nullable=False) # encrypted tokens
+    connected_at = Column(DateTime, default=datetime.utcnow)
+

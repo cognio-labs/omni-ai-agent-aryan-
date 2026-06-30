@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     e2b_api_key: str = Field(default_factory=lambda: os.getenv("E2B_API_KEY", ""), description="E2B API key")
     e2b_template_id: str = Field(default_factory=lambda: os.getenv("E2B_TEMPLATE_ID", ""), description="Optional E2B sandbox template ID")
 
+    # Google OAuth (Gmail Integration)
+    google_client_id: str = Field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""), description="Google OAuth Client ID")
+    google_client_secret: str = Field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""), description="Google OAuth Client Secret")
+    google_redirect_uri: str = Field(default_factory=lambda: os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8001/api/integrations/gmail/callback"), description="Google OAuth Redirect URI")
+
+
     # Application
     app_name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "OmniClient AI"))
     app_port: int = Field(default_factory=lambda: int(os.getenv("APP_PORT", "8001")))

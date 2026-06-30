@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260630-workspace-v6" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260630-phase2-codeblock-v2" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
@@ -65,69 +65,181 @@
         <div class="welcome-inner">
           <p class="quiet-label">OmniClient AI Workspace</p>
           <h1>What would you like to create today?</h1>
-          <div class="suggestions" aria-label="Prompt suggestions">
-            <button type="button" data-prompt="Build a premium website for my product with architecture, sections, copy, and implementation steps.">Website</button>
-            <button type="button" data-prompt="Design a mobile app experience with screens, flows, UI states, and technical notes.">Mobile App</button>
-            <button type="button" data-prompt="Research this topic deeply and summarize insights, sources, risks, and recommendations: ">Research</button>
-            <button type="button" data-prompt="Create an automation workflow with triggers, tools, data flow, and implementation steps.">Automation</button>
-            <button type="button" data-prompt="" id="presentation-pill" onclick="openSlideBuilder(event)">Presentation</button>
+          <!-- Action Pills Row -->
+          <div class="action-pills" id="action-pills" aria-label="Quick actions">
+            <button class="action-pill" type="button" id="pill-website" data-pill="website">
+              <i data-lucide="globe"></i><span>Website</span>
+            </button>
+            <button class="action-pill" type="button" id="pill-slides" data-pill="slides">
+              <i data-lucide="presentation"></i><span>Create slides</span>
+            </button>
+            <button class="action-pill" type="button" id="pill-design" data-pill="design">
+              <i data-lucide="pen-tool"></i><span>Design</span>
+            </button>
+            <button class="action-pill" type="button" id="pill-devapp" data-pill="devapp">
+              <i data-lucide="code-2"></i><span>Develop apps</span>
+            </button>
+            <button class="action-pill action-pill-more" type="button" id="pill-more" data-pill="more">
+              <i data-lucide="layout-grid"></i><span>More</span><i data-lucide="chevron-down" class="pill-chevron"></i>
+            </button>
           </div>
-        </div>
-      </section>
 
-      <!-- Slide Builder Panel -->
-      <section id="slide-builder-panel" class="slide-builder" aria-label="Presentation builder" style="display:none;margin:0 auto 24px;max-width:820px;">
-        <div class="slide-builder-header">
-          <h3>&#x1F4CA; Presentation Builder</h3>
-          <button type="button" class="icon-btn" onclick="closeSlideBuilder()" title="Close">&#x2715;</button>
-        </div>
-        <textarea id="sb-topic" placeholder="Describe your presentation topic&#x2026; e.g. &#x22;AI in Healthcare&#x22; or &#x22;Marketing strategy for SaaS startups&#x22;" rows="3"></textarea>
-        <!-- Sample prompts -->
-        <div class="sample-prompts">
-          <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">AI in Healthcare</button>
-          <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">SaaS Marketing Strategy</button>
-          <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Startup Pitch Deck</button>
-          <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">E-commerce Growth Plan</button>
-        </div>
-        <!-- Template grid -->
-        <div class="template-grid" id="sb-template-grid">
-          <div class="template-card selected" data-template="Bold Blue" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#2563EB,#06B6D4)"></div>
-            <div class="tc-name">Bold Blue</div>
+          <!-- More Dropdown -->
+          <div id="pill-more-menu" class="pill-more-menu" aria-hidden="true">
+            <button class="pill-more-item" type="button" data-action="video"><i data-lucide="video"></i>Video</button>
+            <button class="pill-more-item" type="button" data-action="scheduled"><i data-lucide="calendar-clock"></i>Scheduled task</button>
+            <button class="pill-more-item" type="button" data-action="research"><i data-lucide="search"></i>Wide research</button>
+            <button class="pill-more-item" type="button" data-action="spreadsheet"><i data-lucide="table-2"></i>Spreadsheet</button>
+            <button class="pill-more-item" type="button" data-action="viz"><i data-lucide="bar-chart-2"></i>Visualization</button>
+            <button class="pill-more-item" type="button" data-action="audio"><i data-lucide="mic"></i>Audio</button>
+            <button class="pill-more-item" type="button" data-action="chatmode"><i data-lucide="message-circle"></i>Chat mode</button>
+            <button class="pill-more-item" type="button" data-action="automation"><i data-lucide="workflow"></i>Automation</button>
           </div>
-          <div class="template-card" data-template="Graphite Cyan" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#111827,#22D3EE)"></div>
-            <div class="tc-name">Graphite Cyan</div>
+
+          <!-- Inline Sub-option Panels -->
+          <!-- WEBSITE sub-options -->
+          <div id="subpanel-website" class="pill-subpanel" aria-hidden="true">
+            <div class="subpanel-header"><span>🌐 What kind of website?</span><button class="subpanel-close icon-btn" type="button" data-close="website"><i data-lucide="x"></i></button></div>
+            <div class="subpanel-options">
+              <button class="subopt-card" type="button" data-prompt="Build a premium e-commerce website with product catalog, cart, checkout flow, and clean modern UI. Include architecture, sections, copy, and implementation steps."><i data-lucide="shopping-cart"></i>E-commerce</button>
+              <button class="subopt-card" type="button" data-prompt="Design a high-converting landing page for a SaaS product. Include hero section, features, social proof, pricing, and CTA. Give full copy and implementation."><i data-lucide="layout-template"></i>Landing page</button>
+              <button class="subopt-card" type="button" data-prompt="Build a beautiful admin dashboard with sidebar nav, data tables, charts, and card metrics. Include responsive design and implementation steps."><i data-lucide="layout-dashboard"></i>Dashboard</button>
+              <button class="subopt-card" type="button" data-prompt="Create a stunning portfolio website for a creative professional. Include hero, work samples, about section, and contact. Give full design and code."><i data-lucide="briefcase"></i>Portfolio</button>
+              <button class="subopt-card" type="button" data-prompt="Design a corporate website for a B2B company. Include homepage, about, services, team, and contact sections with professional design."><i data-lucide="building-2"></i>Corporate</button>
+              <button class="subopt-card" type="button" data-prompt="Build a SaaS product website with pricing tiers, feature comparison, testimonials, and sign-up flow. Include full implementation."><i data-lucide="rocket"></i>SaaS</button>
+              <button class="subopt-card" type="button" data-prompt="Create a link-in-bio page with social links, featured content, and profile section. Make it visually stunning and mobile-optimized."><i data-lucide="link"></i>Link-in-bio</button>
+              <button class="subopt-card" type="button" data-prompt="Build a modern blog website with article listing, category filters, featured post hero, and clean reading experience."><i data-lucide="book-open"></i>Blog</button>
+            </div>
           </div>
-          <div class="template-card" data-template="Freestyle" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#6366F1,#A78BFA)"></div>
-            <div class="tc-name">Freestyle</div>
+
+          <!-- SLIDES sub-options (uses existing slide builder) -->
+          <div id="subpanel-slides" class="pill-subpanel" aria-hidden="true">
+            <div class="subpanel-header"><span>📊 What would you like to present?</span><button class="subpanel-close icon-btn" type="button" data-close="slides"><i data-lucide="x"></i></button></div>
+            <div class="subpanel-options">
+              <button class="subopt-card" type="button" data-open-sb="Business review"><i data-lucide="bar-chart-3"></i>Business review</button>
+              <button class="subopt-card" type="button" data-open-sb="Competitor analysis"><i data-lucide="git-compare"></i>Competitor analysis</button>
+              <button class="subopt-card" type="button" data-open-sb="Status report"><i data-lucide="clipboard-list"></i>Status report</button>
+              <button class="subopt-card" type="button" data-open-sb="Pitch deck"><i data-lucide="rocket"></i>Pitch deck</button>
+              <button class="subopt-card" type="button" data-open-sb="Product roadmap"><i data-lucide="map"></i>Product roadmap</button>
+              <button class="subopt-card" type="button" data-open-sb="Marketing strategy"><i data-lucide="megaphone"></i>Marketing strategy</button>
+            </div>
           </div>
-          <div class="template-card" data-template="Aqua Breeze" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#E0F2FE,#14B8A6)"></div>
-            <div class="tc-name">Aqua Breeze</div>
+
+          <!-- DESIGN sub-options -->
+          <div id="subpanel-design" class="pill-subpanel" aria-hidden="true">
+            <div class="subpanel-header"><span>🎨 What would you like to design?</span><button class="subpanel-close icon-btn" type="button" data-close="design"><i data-lucide="x"></i></button></div>
+            <div class="subpanel-options">
+              <button class="subopt-card" type="button" data-prompt="Design a complete mobile app UI for iOS/Android. Include all screens, navigation flows, components, typography, and color system. Deliver as Figma-ready specs."><i data-lucide="smartphone"></i>Mobile app UI</button>
+              <button class="subopt-card" type="button" data-prompt="Design a web app interface with component library. Include design tokens, typography scale, button states, form elements, and dark/light modes."><i data-lucide="monitor"></i>Web app UI</button>
+              <button class="subopt-card" type="button" data-prompt="Create a complete brand identity system including logo concepts, color palette, typography, and brand guidelines document."><i data-lucide="palette"></i>Brand identity</button>
+              <button class="subopt-card" type="button" data-prompt="Design an icon set for a product. Specify style (outline/filled/duotone), grid size, and deliver SVG-ready specifications for 20 key icons."><i data-lucide="shapes"></i>Icon system</button>
+              <button class="subopt-card" type="button" data-prompt="Design a data visualization dashboard. Include chart types, color encoding for data, layout, and accessibility guidelines."><i data-lucide="pie-chart"></i>Data viz</button>
+              <button class="subopt-card" type="button" data-prompt="Design a marketing email template. Include header, hero image area, content blocks, CTA button, and footer. Provide HTML/CSS code."><i data-lucide="mail"></i>Email template</button>
+            </div>
           </div>
-          <div class="template-card" data-template="Emerald Edge" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#10B981,#ECFDF5)"></div>
-            <div class="tc-name">Emerald Edge</div>
+
+          <!-- DEVELOP APPS sub-options -->
+          <div id="subpanel-devapp" class="pill-subpanel" aria-hidden="true">
+            <div class="subpanel-header"><span>⚡ What would you like to build?</span><button class="subpanel-close icon-btn" type="button" data-close="devapp"><i data-lucide="x"></i></button></div>
+            <div class="subpanel-options">
+              <button class="subopt-card" type="button" data-prompt="Build a full-stack web application with React frontend and Node.js/Python backend. Include architecture, database schema, API design, and deployment guide."><i data-lucide="globe"></i>Web app</button>
+              <button class="subopt-card" type="button" data-prompt="Develop a React Native / Flutter mobile app. Include navigation structure, state management, UI components, and API integration."><i data-lucide="smartphone"></i>Mobile app</button>
+              <button class="subopt-card" type="button" data-prompt="Build a CLI tool in Python or Node.js. Include command structure, argument parsing, configuration, error handling, and packaging."><i data-lucide="terminal"></i>CLI tool</button>
+              <button class="subopt-card" type="button" data-prompt="Design and build a REST API service. Include endpoint design, authentication, rate limiting, database integration, and OpenAPI docs."><i data-lucide="server"></i>API service</button>
+              <button class="subopt-card" type="button" data-prompt="Build a browser extension with popup UI, background script, and content script. Include manifest v3 structure and Chrome Web Store submission guide."><i data-lucide="puzzle"></i>Browser extension</button>
+              <button class="subopt-card" type="button" data-prompt="Create a Discord/Slack bot with slash commands, event handlers, and database integration. Include deployment and hosting instructions."><i data-lucide="bot"></i>Bot / Agent</button>
+            </div>
           </div>
-          <div class="template-card" data-template="Sandy Rhythm" onclick="selectSBTemplate(this)">
-            <div class="tc-swatch" style="background:linear-gradient(135deg,#F5F5DC,#F4A460)"></div>
-            <div class="tc-name">Sandy Rhythm</div>
+
+          <!-- Slide Builder Accordion (opened from slides subpanel) -->
+          <div id="slide-builder-panel" class="sb-accordion" aria-hidden="true">
+            <div class="slide-builder-header">
+              <h3>📊 What would you like to present?</h3>
+              <button type="button" class="icon-btn" onclick="toggleSlideBuilderAccordion(event)" title="Close">✕</button>
+            </div>
+            
+            <textarea id="sb-topic" placeholder="Describe your presentation topic... e.g. 'AI in Healthcare' or 'Marketing strategy for SaaS startups'" rows="3"></textarea>
+            
+            <!-- Sample prompts -->
+            <div class="sample-prompts">
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">AI in Healthcare</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">SaaS Marketing Strategy</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Startup Pitch Deck</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">E-commerce Growth Plan</button>
+            </div>
+
+            <!-- Template Grid -->
+            <div class="sb-section-title">Select Design Template</div>
+            <div class="template-grid" id="sb-template-grid">
+              <div class="template-card selected" data-template="Editorial" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #1e293b, #f1f5f9)"></div>
+                <div class="tc-name">Editorial</div>
+              </div>
+              <div class="template-card" data-template="Pixel" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #f43f5e, #10b981)"></div>
+                <div class="tc-name">Pixel</div>
+              </div>
+              <div class="template-card" data-template="Vellum" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #d97706, #fef3c7)"></div>
+                <div class="tc-name">Vellum</div>
+              </div>
+              <div class="template-card" data-template="Sketch" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #0284c7, #e0f2fe)"></div>
+                <div class="tc-name">Sketch</div>
+              </div>
+              <div class="template-card" data-template="Whiteboard" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #111827, #f9fafb)"></div>
+                <div class="tc-name">Whiteboard</div>
+              </div>
+              <div class="template-card" data-template="Minimal" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #6b7280, #f3f4f6)"></div>
+                <div class="tc-name">Minimal</div>
+              </div>
+              <div class="template-card" data-template="Corporate" onclick="selectSBTemplate(this)">
+                <div class="tc-swatch" style="background: linear-gradient(135deg, #1e3a8a, #3b82f6)"></div>
+                <div class="tc-name">Corporate</div>
+              </div>
+            </div>
+
+            <!-- Slide Count and Tone Row -->
+            <div class="sb-options-row">
+              <div class="sb-option-group">
+                <span class="sb-option-label">Slide Count</span>
+                <select id="sb-slide-count" class="sb-count-select">
+                  <option value="5">4-6 slides</option>
+                  <option value="10" selected>8-12 slides</option>
+                  <option value="15">12-18 slides</option>
+                </select>
+              </div>
+
+              <div class="sb-option-group">
+                <span class="sb-option-label">Tone</span>
+                <div class="sb-tone-selector">
+                  <button type="button" class="sb-tone-btn active" data-tone="Professional" onclick="selectSBTone(this)">Professional</button>
+                  <button type="button" class="sb-tone-btn" data-tone="Casual" onclick="selectSBTone(this)">Casual</button>
+                  <button type="button" class="sb-tone-btn" data-tone="Academic" onclick="selectSBTone(this)">Academic</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Actions Row -->
+            <div class="slide-builder-actions">
+              <button id="sb-generate-btn" class="sb-generate-btn" type="button" onclick="generatePresentation()">✨ Generate Presentation</button>
+            </div>
           </div>
-        </div>
-        <!-- Actions row -->
-        <div class="slide-builder-actions">
-          <select id="sb-slide-count" class="sb-count-select">
-            <option value="8">8 slides</option>
-            <option value="10" selected>10 slides</option>
-            <option value="12">12 slides</option>
-            <option value="15">15 slides</option>
-            <option value="20">20 slides</option>
-          </select>
-          <button id="sb-generate-btn" class="sb-generate-btn" type="button" onclick="generatePresentation()">&#x2728; Generate Presentation</button>
-        </div>
-      </section>
+
+          <!-- Your Projects mini gallery -->
+          <div id="welcome-projects" class="welcome-projects" style="display:none">
+            <div class="welcome-projects-header">
+              <span>Your projects</span>
+              <button type="button" class="subtle-link" onclick="setHistoryFilter('projects')">See all</button>
+            </div>
+            <div id="welcome-projects-list" class="welcome-projects-list"></div>
+          </div>
+          </div><!-- end welcome-projects -->
+
+        </div><!-- end welcome-inner -->
+      </section><!-- end welcome-screen -->
 
       <aside id="sandbox-panel" class="sandbox-panel idle collapsed" aria-label="Sandbox tasks">
         <button id="sandbox-toggle" class="sandbox-summary" type="button"><span class="task-dot"></span><span id="sandbox-summary-text">Sandbox idle</span><i data-lucide="chevron-up"></i></button>
@@ -239,8 +351,13 @@
         <div><div class="setting-label">Remember conversation history</div><div class="setting-desc">Context is preserved across the session</div></div>
         <label class="toggle"><input type="checkbox" id="st-remember-history" checked /><span class="toggle-thumb"></span></label>
       </div>
+      <div class="setting-row">
+        <div class="setting-label">Memory usage</div>
+        <div id="st-memory-count" class="setting-desc" style="font-size:13px;color:var(--muted);margin-top:2px">—</div>
+      </div>
       <div class="st-row-actions">
         <button id="st-clear-memory" class="st-danger-btn" type="button">Clear all memory</button>
+        <button id="st-export-memory" class="st-action-btn" type="button">Export memory as JSON</button>
       </div>
     </section>
 
@@ -359,7 +476,8 @@
   </div>
 
   <div id="toast-container" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260630-workspace-v6"></script>
-  <script src="/static/settings.js?v=20260630-workspace-v6"></script>
+  <script src="/static/app.js?v=20260630-phase1-v1"></script>
+  <script src="/static/settings.js?v=20260630-phase1-v1"></script>
 </body>
 </html>
+

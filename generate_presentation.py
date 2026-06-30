@@ -1,4 +1,4 @@
-﻿"""
+"""
 generate_presentation.py — Dynamic PPTX + slides JSON generator for OmniClient.
 
 Public API
@@ -36,50 +36,57 @@ PRESENTATIONS_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 
 TEMPLATE_COLORS = {
-    "Bold Blue": {
-        "bg":       RGBColor(37,  99,  235),   # #2563EB
-        "accent":   RGBColor(6,   182, 212),   # #06B6D4
-        "card":     RGBColor(30,  64,  175),   # #1E40AF
+    "Editorial": {
+        "bg":       RGBColor(30,  41,  59),    # Slate 800
+        "accent":   RGBColor(241, 245, 249),   # Slate 100
+        "card":     RGBColor(51,  65,  85),    # Slate 700
         "text":     RGBColor(255, 255, 255),
-        "muted":    RGBColor(224, 231, 255),   # #E0E7FF
+        "muted":    RGBColor(203, 213, 225),
     },
-    "Graphite Cyan": {
-        "bg":       RGBColor(17,  24,  39),    # #111827
-        "accent":   RGBColor(34,  211, 238),   # #22D3EE
-        "card":     RGBColor(31,  41,  55),    # #1F2937
-        "text":     RGBColor(249, 250, 251),
+    "Pixel": {
+        "bg":       RGBColor(244, 63,  94),    # Rose 500
+        "accent":   RGBColor(16,  185, 129),   # Emerald 500
+        "card":     RGBColor(190, 24,  74),    # Rose 700
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(254, 205, 211),
+    },
+    "Vellum": {
+        "bg":       RGBColor(217, 119, 6),     # Amber 600
+        "accent":   RGBColor(254, 243, 199),   # Amber 100
+        "card":     RGBColor(180, 83,  9),     # Amber 800
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(253, 230, 138),
+    },
+    "Sketch": {
+        "bg":       RGBColor(2,   132, 199),   # Sky 600
+        "accent":   RGBColor(224, 242, 254),   # Sky 100
+        "card":     RGBColor(3,   105, 161),   # Sky 700
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(186, 230, 253),
+    },
+    "Whiteboard": {
+        "bg":       RGBColor(17,  24,  39),    # Gray 900
+        "accent":   RGBColor(249, 250, 251),   # Gray 50
+        "card":     RGBColor(31,  41,  55),    # Gray 800
+        "text":     RGBColor(255, 255, 255),
         "muted":    RGBColor(156, 163, 175),
     },
-    "Freestyle": {
-        "bg":       RGBColor(99,  102, 241),   # #6366F1
-        "accent":   RGBColor(167, 139, 250),   # #A78BFA
-        "card":     RGBColor(67,  56,  202),   # #4338CA
-        "text":     RGBColor(255, 255, 255),
-        "muted":    RGBColor(224, 231, 255),
-    },
-    "Aqua Breeze": {
-        "bg":       RGBColor(224, 242, 254),   # #E0F2FE
-        "accent":   RGBColor(20,  184, 166),   # #14B8A6
-        "card":     RGBColor(240, 249, 255),   # #F0F9FF
-        "text":     RGBColor(15,  23,  42),    # #0F172A
-        "muted":    RGBColor(100, 116, 139),
-    },
-    "Emerald Edge": {
-        "bg":       RGBColor(255, 255, 255),
-        "accent":   RGBColor(16,  185, 129),   # #10B981
-        "card":     RGBColor(236, 253, 245),   # #ECFDF5
-        "text":     RGBColor(31,  41,  55),    # #1F2937
+    "Minimal": {
+        "bg":       RGBColor(243, 244, 246),   # Gray 100
+        "accent":   RGBColor(75,  85,  99),    # Gray 600
+        "card":     RGBColor(255, 255, 255),
+        "text":     RGBColor(17,  24,  39),    # Gray 900
         "muted":    RGBColor(107, 114, 128),
     },
-    "Sandy Rhythm": {
-        "bg":       RGBColor(245, 245, 220),   # #F5F5DC beige
-        "accent":   RGBColor(139, 69,  19),    # #8B4513 saddlebrown
-        "card":     RGBColor(255, 248, 220),   # #FFF8DC cornsilk
-        "text":     RGBColor(45,  42,  38),    # #2D2A26
-        "muted":    RGBColor(120, 100, 80),
+    "Corporate": {
+        "bg":       RGBColor(30,  58,  138),   # Blue 900
+        "accent":   RGBColor(59,  130, 246),   # Blue 500
+        "card":     RGBColor(23,  37,  84),    # Blue 950
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(147, 197, 253),
     },
 }
-DEFAULT_TEMPLATE = "Bold Blue"
+DEFAULT_TEMPLATE = "Corporate"
 
 
 def _colors(template: str) -> dict:
@@ -351,6 +358,251 @@ def create_presentation(
         "file_path":   str(file_path),
         "slides_json": slides_data,
     }
+
+
+def build_slide_preview_html(slide: dict, template: str) -> str:
+    """Generate a mini responsive HTML preview block for the active slide template."""
+    bg_style = "background: linear-gradient(135deg, #1e293b, #0f172a);"
+    text_color = "color: white;"
+    card_bg = "background: rgba(255,255,255,0.08);"
+    accent_bar = "background: #5f5af6;"
+    
+    if template == "Pixel":
+        bg_style = "background: linear-gradient(135deg, #f43f5e, #be123c);"
+        accent_bar = "background: #10b981;"
+    elif template == "Vellum":
+        bg_style = "background: linear-gradient(135deg, #d97706, #b45309);"
+        accent_bar = "background: #fef3c7;"
+    elif template == "Sketch":
+        bg_style = "background: linear-gradient(135deg, #0284c7, #0369a1);"
+        accent_bar = "background: #e0f2fe;"
+    elif template == "Whiteboard":
+        bg_style = "background: linear-gradient(135deg, #111827, #1f2937);"
+        accent_bar = "background: #f9fafb;"
+    elif template == "Minimal":
+        bg_style = "background: linear-gradient(135deg, #f3f4f6, #e5e7eb);"
+        text_color = "color: #111827;"
+        card_bg = "background: white; border: 1px solid #d1d5db;"
+        accent_bar = "background: #4b5563;"
+    elif template == "Corporate":
+        bg_style = "background: linear-gradient(135deg, #1e3a8a, #172554);"
+        accent_bar = "background: #3b82f6;"
+
+    title = slide.get("title", "")
+    type_ = slide.get("type", "content").lower()
+    
+    html = f'<div class="slide-preview-box rounded-xl p-6 relative overflow-hidden h-48 flex flex-col justify-between" style="{bg_style} {text_color}">'
+    html += f'<div class="absolute bottom-0 left-0 right-0 h-1" style="{accent_bar}"></div>'
+    
+    if type_ == "title":
+        html += '<div class="text-center my-auto">'
+        html += f'<h4 class="text-xl font-bold tracking-tight">{title}</h4>'
+        html += f'<p class="text-xs opacity-80 mt-1">{slide.get("subtitle", "")}</p>'
+        html += '</div>'
+    elif type_ == "cta":
+        html += '<div class="text-center my-auto">'
+        html += f'<h4 class="text-xl font-bold tracking-tight">{title}</h4>'
+        html += f'<p class="text-xs opacity-80 mt-1">{slide.get("subtitle", "")}</p>'
+        html += '</div>'
+    else:
+        html += f'<h4 class="text-sm font-bold tracking-wide border-b border-white/10 pb-1 mb-2">{title}</h4>'
+        html += f'<div class="p-3 rounded-lg flex-1 overflow-hidden" style="{card_bg}">'
+        html += '<ul class="space-y-1">'
+        points = slide.get("points") or slide.get("bullets") or []
+        for pt in points[:3]:
+            html += f'<li class="text-[10px] leading-tight list-disc list-inside truncate">{pt}</li>'
+        html += '</ul>'
+        html += '</div>'
+        
+    html += '</div>'
+    return html
+
+
+def generate_presentation_stream(
+    topic: str,
+    template: str,
+    slide_count: int,
+    conversation_id: Optional[int],
+    db: Session,
+):
+    """
+    Multi-phase presentation generator that yields SSE text events.
+    1. researching: Web searches via search.py
+    2. outlining: Outline generation via OpenAI
+    3. generating: Detailed per-slide generation via OpenAI
+    4. done: Save to DB & pptx build
+    """
+    from search import deep_search, format_search_for_context
+    from config import get_settings
+    from agent_engine import _make_client, _reasoning_kwargs
+    from models import Presentation as PresentationModel
+    
+    settings = get_settings()
+    client = _make_client()
+    
+    # ── PHASE 1: RESEARCHING ──
+    q1 = f"{topic} latest trends key developments"
+    q2 = f"{topic} industry analysis statistics"
+    
+    yield json.dumps({"type": "progress", "phase": "researching", "query": q1})
+    try:
+        results1 = deep_search(q1, db, max_results=3)
+    except Exception:
+        results1 = []
+        
+    yield json.dumps({"type": "progress", "phase": "researching", "query": q2})
+    try:
+        results2 = deep_search(q2, db, max_results=3)
+    except Exception:
+        results2 = []
+        
+    search_context = format_search_for_context(results1 + results2)
+    yield json.dumps({
+        "type": "progress",
+        "phase": "researching",
+        "status": "completed",
+        "summary": (search_context[:400] + "...") if search_context else "No results found."
+    })
+    
+    # ── PHASE 2: OUTLINING ──
+    outline_prompt = f"""You are a professional presentation architect. Based on this research context:
+{search_context}
+
+Generate an outline of exactly {slide_count} slides for the topic "{topic}".
+Return a JSON array of slide objects. Each object must have keys:
+- "slide_number" (int, 1-indexed)
+- "title" (string, max 8 words)
+- "description" (string, max 20 words summary of what this slide will cover)
+- "type" (one of: "title", "agenda", "content", "cta")
+
+Return ONLY the raw JSON array. No markdown code blocks, no other text."""
+
+    try:
+        resp = client.chat.completions.create(
+            model=settings.default_model,
+            messages=[{"role": "user", "content": outline_prompt}],
+            temperature=0.3,
+            **_reasoning_kwargs(),
+        )
+        outline_text = resp.choices[0].message.content.strip()
+        if outline_text.startswith("```"):
+            outline_text = re.sub(r"```(?:json)?\s*|```$", "", outline_text)
+        outline = json.loads(outline_text)
+    except Exception as e:
+        # Fallback outline
+        outline = [
+            {"slide_number": 1, "title": topic.title(), "description": "Title slide", "type": "title"},
+            {"slide_number": 2, "title": "Agenda", "description": "Presentation structure", "type": "agenda"},
+        ]
+        for i in range(3, slide_count):
+            outline.append({"slide_number": i, "title": f"Key Topic {i-2}", "description": "Core information", "type": "content"})
+        outline.append({"slide_number": slide_count, "title": "Conclusion", "description": "Closing remarks", "type": "cta"})
+
+    yield json.dumps({"type": "progress", "phase": "outlining", "slides": outline})
+    
+    # ── PHASE 3: GENERATING ──
+    slides_data = []
+    for idx, item in enumerate(outline):
+        slide_num = item["slide_number"]
+        generating_prompt = f"""You are a professional presentation writer. Based on the research:
+{search_context}
+
+We are writing slide {slide_num} of {slide_count}.
+Slide outline title: "{item['title']}"
+Slide description: "{item['description']}"
+Slide type: "{item['type']}"
+
+Generate the full slide content as a JSON object with:
+- "slide_number": {slide_num}
+- "type": "{item['type']}"
+- "title": "{item['title']}"
+- "subtitle": string (ONLY if type is "title" or "cta", otherwise empty)
+- "points": list of 3-4 concise bullet points (ONLY if type is "content" or "agenda", otherwise empty)
+- "notes": detailed speaker notes (2-3 sentences)
+
+CRITICAL RULES:
+1. Use only data gathered from the research phase. If exact figures aren't available, clearly label estimates as estimates. Never invent precise-looking fake statistics.
+2. Return ONLY the raw JSON object, no explanation, no markdown blocks."""
+
+        try:
+            resp = client.chat.completions.create(
+                model=settings.default_model,
+                messages=[{"role": "user", "content": generating_prompt}],
+                temperature=0.4,
+                **_reasoning_kwargs(),
+            )
+            slide_text = resp.choices[0].message.content.strip()
+            if slide_text.startswith("```"):
+                slide_text = re.sub(r"```(?:json)?\s*|```$", "", slide_text)
+            slide_obj = json.loads(slide_text)
+        except Exception:
+            # Fallback slide
+            slide_obj = {
+                "slide_number": slide_num,
+                "type": item["type"],
+                "title": item["title"],
+                "subtitle": f"Discussion about {topic}" if item["type"] in ("title", "cta") else "",
+                "points": [f"Key point 1 regarding {item['title']}", f"Supporting details for {topic}"],
+                "notes": f"This slide presents insights on {item['title']}."
+            }
+            
+        slides_data.append(slide_obj)
+        slide_html = build_slide_preview_html(slide_obj, template)
+        
+        yield json.dumps({
+            "type": "progress",
+            "phase": "generating",
+            "slide_number": slide_num,
+            "total": slide_count,
+            "slide_html": slide_html,
+            "slide_data": slide_obj
+        })
+
+    # ── PHASE 4: DELIVER (DONE) ──
+    try:
+        result = create_presentation(
+            topic=topic,
+            template=template,
+            slide_count=slide_count,
+            slides_data=slides_data,
+        )
+        file_path = result["file_path"]
+    except Exception:
+        file_path = ""
+        
+    pres = PresentationModel(
+        title=topic.strip().title(),
+        topic=topic,
+        template=template,
+        slide_count=slide_count,
+        file_path=file_path,
+        slides_json=json.dumps(slides_data),
+        status="completed",
+        conversation_id=conversation_id,
+    )
+    db.add(pres)
+    db.commit()
+    db.refresh(pres)
+    
+    yield json.dumps({
+        "type": "progress",
+        "phase": "done",
+        "project_id": pres.id,
+        "file_path": file_path,
+        "title": pres.title,
+        "slides": slides_data
+    })
+
+
+if __name__ == "__main__":
+    result = create_presentation(
+        topic="Digital Marketing Strategy for SaaS",
+        template="Bold Blue",
+        slide_count=10,
+    )
+    print("Generated:", result["file_path"])
+    print("Slides:", len(result["slides_json"]))
+
 
 
 if __name__ == "__main__":

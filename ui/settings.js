@@ -1,4 +1,4 @@
-﻿/**
+/**
  * settings.js — OmniClient Settings Manager
  * All 10 Settings tabs fully functional with localStorage persistence.
  * Depends on app.js globals: showToast, applyTheme, state,
@@ -271,23 +271,74 @@
       h.addEventListener('change', function () {
         S.rememberHistory = h.checked;
         saveSettings();
-        toast(S.rememberHistory ? 'History memory enabled' : 'Disabled', 'info');
+        toast(S.rememberHistory ? 'History memory enabled' : 'History memory disabled', 'info');
       });
     }
+
+    // Clear memory — hits backend + localStorage
     var c = el('st-clear-memory');
     if (c) {
-      c.addEventListener('click', function () {
+      c.addEventListener('click', async function () {
         if (!confirm('Clear all conversation memory? This cannot be undone.')) return;
-        localStorage.removeItem('omniclient_conversations');
-        if (typeof state !== 'undefined') {
-          state.conversations = [];
-          state.currentConversationId = null;
-          if (typeof renderConversationList === 'function') renderConversationList();
-          if (typeof showWelcomeScreen === 'function') showWelcomeScreen();
+        c.disabled = true;
+        c.textContent = 'Clearing…';
+        try {
+          var convId = (typeof state !== 'undefined') ? state.currentConversationId : null;
+          if (convId) {
+            await fetch('/api/memory/clear/' + convId, { method: 'DELETE' });
+          }
+          localStorage.removeItem('omniclient_conversations');
+          if (typeof state !== 'undefined') {
+            state.conversations = [];
+            state.currentConversationId = null;
+            if (typeof renderConversationList === 'function') renderConversationList();
+            if (typeof showWelcomeScreen === 'function') showWelcomeScreen();
+          }
+          toast('Memory cleared', 'success');
+          updateMemoryCount();
+        } catch (err) {
+          toast('Clear failed: ' + err.message, 'error');
+        } finally {
+          c.disabled = false;
+          c.textContent = 'Clear all memory';
         }
-        toast('Memory cleared', 'success');
       });
     }
+
+    // Export memory as JSON
+    var expBtn = el('st-export-memory');
+    if (expBtn) {
+      expBtn.addEventListener('click', async function () {
+        var convId = (typeof state !== 'undefined') ? state.currentConversationId : null;
+        if (!convId) { toast('No active conversation — open a chat first', 'warning'); return; }
+        try {
+          var res = await fetch('/api/memory/export/' + convId);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          var data = await res.json();
+          var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url; a.download = 'omniclient_memory_' + convId + '.json'; a.click();
+          URL.revokeObjectURL(url);
+          toast('Memory exported (' + data.count + ' entries)', 'success');
+        } catch (err) { toast('Export failed: ' + err.message, 'error'); }
+      });
+    }
+
+    updateMemoryCount();
+  }
+
+  async function updateMemoryCount() {
+    var countEl = el('st-memory-count');
+    if (!countEl) return;
+    var convId = (typeof state !== 'undefined') ? state.currentConversationId : null;
+    if (!convId) { countEl.textContent = 'No active conversation'; return; }
+    try {
+      var res = await fetch('/api/memory/' + convId);
+      var data = await res.json();
+      var n = (data.memories || []).length;
+      countEl.textContent = n + ' memor' + (n === 1 ? 'y' : 'ies') + ' stored';
+    } catch { countEl.textContent = '—'; }
   }
 
   /* ─── Sandbox Tab ─────────────────────────────────────── */
@@ -506,25 +557,43 @@
     if (sh) {
       sh.addEventListener('change', function () {
         S.saveHistory = sh.checked; saveSettings();
-        toast(S.saveHistory ? 'History saving enabled' : 'Disabled', 'info');
+        toast(S.saveHistory ? 'History saving enabled' : 'History saving disabled', 'info');
       });
     }
     var del = el('st-delete-all-data');
     if (del) {
-      del.addEventListener('click', function () {
-        if (!confirm('Delete ALL your data? Permanent, cannot be undone.')) return;
-        if (!confirm('Final confirmation: clear all conversations, settings, and keys?')) return;
-        localStorage.clear();
-        S = JSON.parse(JSON.stringify(DEFAULTS));
-        if (typeof state !== 'undefined') {
-          state.conversations = [];
-          state.currentConversationId = null;
-          state.currentMode = 'General';
-          if (typeof renderConversationList === 'function') renderConversationList();
-          if (typeof showWelcomeScreen      === 'function') showWelcomeScreen();
+      del.addEventListener('click', async function () {
+        if (!confirm('Delete ALL your data? This is permanent and cannot be undone.')) return;
+        // Second confirmation with checkbox
+        var msg = 'Final confirmation:\n\nType DELETE to confirm you want to permanently erase all conversations, memory, and settings.';
+        var typed = prompt(msg);
+        if (!typed || typed.trim().toUpperCase() !== 'DELETE') {
+          toast('Data deletion cancelled', 'info');
+          return;
         }
-        toast('All data deleted. Reloading…', 'info');
-        setTimeout(function () { location.reload(); }, 1800);
+        del.disabled = true;
+        del.textContent = 'Deleting…';
+        try {
+          // Purge backend DB
+          var res = await fetch('/api/data/all', { method: 'DELETE' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          // Purge localStorage
+          localStorage.clear();
+          S = JSON.parse(JSON.stringify(DEFAULTS));
+          if (typeof state !== 'undefined') {
+            state.conversations = [];
+            state.currentConversationId = null;
+            state.currentMode = 'General';
+            if (typeof renderConversationList === 'function') renderConversationList();
+            if (typeof showWelcomeScreen      === 'function') showWelcomeScreen();
+          }
+          toast('All data permanently deleted. Reloading…', 'info');
+          setTimeout(function () { location.reload(); }, 1800);
+        } catch (err) {
+          toast('Deletion failed: ' + err.message, 'error');
+          del.disabled = false;
+          del.textContent = 'Delete all my data';
+        }
       });
     }
   }
@@ -534,9 +603,34 @@
     var btn = el('settings-btn');
     if (btn) {
       btn.addEventListener('click', function () {
-        setTimeout(populateForm, 40);
+        setTimeout(function() {
+          populateForm();
+          loadActiveModel();
+          updateMemoryCount();
+        }, 40);
       });
     }
+  }
+
+  /* ─── Load real model from backend ───────────────────── */
+  async function loadActiveModel() {
+    try {
+      var res = await fetch('/api/settings/model');
+      if (!res.ok) return;
+      var data = await res.json();
+      var modelEl = el('st-model');
+      if (!modelEl || !data.default_model) return;
+      // See if the value already exists in the dropdown options
+      var exists = Array.from(modelEl.options).some(function (o) { return o.value === data.default_model; });
+      if (!exists) {
+        var opt = document.createElement('option');
+        opt.value = data.default_model;
+        opt.textContent = data.default_model.split('/').pop(); // friendly name
+        modelEl.insertBefore(opt, modelEl.firstChild);
+      }
+      modelEl.value = data.default_model;
+      S.model = data.default_model;
+    } catch (e) { /* silent */ }
   }
 
   /* ─── Init ────────────────────────────────────────────── */

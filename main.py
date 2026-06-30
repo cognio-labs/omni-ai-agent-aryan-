@@ -210,6 +210,11 @@ class GeneratePresentationRequest(BaseModel):
     conversation_id: Optional[int] = None
 
 
+class SlideNotesRequest(BaseModel):
+    notes: str
+
+
+
 # ---------------------------------------------------------------------------
 # Root - serve UI
 # ---------------------------------------------------------------------------
@@ -583,6 +588,55 @@ def remove_memory(memory_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 
+@app.delete("/api/memory/clear/{conversation_id}")
+def clear_conversation_memory(conversation_id: int, db: Session = Depends(get_db)):
+    """Delete all memory entries for a given conversation."""
+    from models import Memory as MemoryModel
+    deleted = db.query(MemoryModel).filter(MemoryModel.conversation_id == conversation_id).delete()
+    db.commit()
+    return {"status": "cleared", "deleted_count": deleted}
+
+
+@app.get("/api/memory/export/{conversation_id}")
+def export_conversation_memory(conversation_id: int, db: Session = Depends(get_db)):
+    """Export all memories for a conversation as downloadable JSON."""
+    mems = get_memories(db, conversation_id)
+    data = [
+        {"id": m.id, "key": m.key, "value": m.value,
+         "importance_score": m.importance_score,
+         "created_at": m.created_at.isoformat() if m.created_at else None}
+        for m in mems
+    ]
+    return JSONResponse(
+        content={"conversation_id": conversation_id, "memories": data, "count": len(data)},
+        headers={"Content-Disposition": f'attachment; filename="memory_{conversation_id}.json"'},
+    )
+
+
+@app.delete("/api/data/all")
+def delete_all_user_data(db: Session = Depends(get_db)):
+    """Delete ALL conversations, messages, and memories from the database."""
+    try:
+        db.query(Memory).delete()
+        db.query(Message).delete()
+        db.query(Conversation).delete()
+        db.commit()
+        return {"status": "all_data_deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to delete data: {e}")
+
+
+@app.get("/api/settings/model")
+def get_active_model():
+    """Return current default model so the frontend can pre-select it in the dropdown."""
+    return {
+        "default_model": settings.default_model,
+        "fallback_model": settings.fallback_model,
+    }
+
+
+
 # ---------------------------------------------------------------------------
 # SlideForge export (legacy - kept for backward compat)
 # ---------------------------------------------------------------------------
@@ -694,6 +748,56 @@ async def generate_presentation_endpoint(
     return _pres_row(pres)
 
 
+@app.post("/api/presentations/generate/stream")
+@limiter.limit("5/minute")
+async def generate_presentation_stream_endpoint(
+    request: Request,
+    body: GeneratePresentationRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate presentation in real-time streaming progress phases (researching -> outlining -> generating -> done)."""
+    from generate_presentation import generate_presentation_stream
+    
+    topic = _sanitize(body.topic)
+    if not topic:
+        raise HTTPException(400, "topic cannot be empty.")
+        
+    slide_count = max(8, min(20, body.slide_count))
+    template = body.template or "Editorial"
+    conversation_id = body.conversation_id
+    
+    if not conversation_id:
+        conv = Conversation(title=f"Presentation: {topic}")
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+        conversation_id = conv.id
+    else:
+        conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if not conv:
+            raise HTTPException(404, f"Conversation {conversation_id} not found.")
+
+    def generate_sse():
+        # Yield metadata event first
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation_id})}\n\n"
+        
+        # Stream the progress phases
+        for event in generate_presentation_stream(topic, template, slide_count, conversation_id, db):
+            yield f"data: {event}\n\n"
+            
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+
 @app.get("/api/presentations")
 def list_presentations(db: Session = Depends(get_db)):
     """Return all presentations ordered by newest first."""
@@ -714,6 +818,24 @@ def download_presentation_pptx(pres_id: int, db: Session = Depends(get_db)):
     p = db.query(Presentation).filter(Presentation.id == pres_id).first()
     if not p:
         raise HTTPException(404, "Presentation not found.")
+    
+    # Dynamically rebuild PPTX from DB slides_json to bake in any Speaker Notes edits
+    from generate_presentation import create_presentation
+    try:
+        slides_data = json.loads(p.slides_json or "[]")
+        result = create_presentation(
+            topic=p.topic,
+            template=p.template,
+            slide_count=p.slide_count,
+            slides_data=slides_data,
+        )
+        p.file_path = result["file_path"]
+        db.commit()
+    except Exception as rebuild_err:
+        print(f"[PPTX Dynamic Rebuild Error] {rebuild_err}")
+        # Fall back to existing file if rebuild fails
+        pass
+
     pptx_path = Path(p.file_path)
     if not pptx_path.exists():
         raise HTTPException(404, "PPTX file not found on disk.")
@@ -722,6 +844,27 @@ def download_presentation_pptx(pres_id: int, db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         filename=pptx_path.name,
     )
+
+
+@app.post("/api/presentations/{pres_id}/slides/{slide_idx}/notes")
+def save_slide_notes(pres_id: int, slide_idx: int, body: SlideNotesRequest, db: Session = Depends(get_db)):
+    """Save updated speaker notes for a specific slide in the presentation."""
+    p = db.query(Presentation).filter(Presentation.id == pres_id).first()
+    if not p:
+        raise HTTPException(404, "Presentation not found.")
+    try:
+        slides = json.loads(p.slides_json or "[]")
+    except Exception:
+        slides = []
+    if slide_idx < 0 or slide_idx >= len(slides):
+        raise HTTPException(400, f"Slide index {slide_idx} out of range (total slides: {len(slides)}).")
+    
+    # Update notes field
+    slides[slide_idx]["notes"] = body.notes
+    p.slides_json = json.dumps(slides)
+    db.commit()
+    return {"status": "saved", "slide_idx": slide_idx, "notes": body.notes}
+
 
 
 @app.delete("/api/presentations/{pres_id}")

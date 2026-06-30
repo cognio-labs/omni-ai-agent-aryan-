@@ -4,7 +4,7 @@ const $=(id)=>document.getElementById(id);
 const agentModes=['General','Developer','Designer','Marketing','Research','Finance','SEO','Automation','Support','Legal','HR'];
 const longPromptThreshold=1800,longLineThreshold=28;
 window.addEventListener('DOMContentLoaded',init);
-async function init(){applyTheme(state.theme);configureMarkdown();await loadAgents();await loadConversations();renderAgentMenu();setupEventListeners();setSidebar(state.sidebarOpen);showWelcomeScreen();refreshIcons();}
+async function init(){applyTheme(state.theme);configureMarkdown();await loadAgents();await loadConversations();renderAgentMenu();setupEventListeners();initActionPills();setSidebar(state.sidebarOpen);showWelcomeScreen();await loadProjects();refreshIcons();}
 function setupEventListeners(){
 $('sidebar-toggle')?.addEventListener('click',()=>setSidebar(false));$('mobile-sidebar-toggle')?.addEventListener('click',()=>setSidebar(true));$('new-chat-btn')?.addEventListener('click',()=>startNewChat());$('open-command-btn')?.addEventListener('click',openCommandPalette);$('settings-btn')?.addEventListener('click',()=>openModal('settings-modal'));$('settings-theme-toggle')?.addEventListener('click',toggleTheme);$('more-btn')?.addEventListener('click',toggleMoreMenu);$('send-btn')?.addEventListener('click',()=>state.isStreaming?cancelStreaming():sendMessage());$('message-input')?.addEventListener('keydown',handleComposerKeydown);$('message-input')?.addEventListener('input',handleComposerInput);$('file-upload-btn')?.addEventListener('click',()=>$('file-input')?.click());$('file-input')?.addEventListener('change',handleFileSelection);$('voice-btn')?.addEventListener('click',toggleVoiceInput);$('agent-select-btn')?.addEventListener('click',toggleAgentMenu);$('command-input')?.addEventListener('input',renderCommandResults);$('sandbox-toggle')?.addEventListener('click',()=>$('sandbox-panel')?.classList.toggle('collapsed'));$('close-settings-btn')?.addEventListener('click',()=>closeModal('settings-modal'));$('close-db-modal-btn')?.addEventListener('click',()=>closeModal('db-modal'));$('db-shortcut-btn')?.addEventListener('click',()=>{closeModal('settings-modal');openModal('db-modal');});$('run-query-btn')?.addEventListener('click',runDbQuery);$('export-csv-btn')?.addEventListener('click',exportQueryCSV);
 document.querySelectorAll('.history-tab').forEach((tab)=>tab.addEventListener('click',()=>setHistoryFilter(tab.dataset.filter)));document.querySelectorAll('.suggestions button').forEach((btn)=>btn.addEventListener('click',()=>startNewChat(null,btn.dataset.prompt||'')));document.querySelectorAll('.settings-tab').forEach((tab)=>tab.addEventListener('click',()=>activateSettingsTab(tab.dataset.tab)));$('more-menu')?.querySelectorAll('button').forEach((btn)=>btn.addEventListener('click',()=>handleMoreAction(btn.dataset.action)));document.addEventListener('keydown',handleGlobalKeys);document.addEventListener('click',handleDocumentClick);setupDropZone();}
@@ -32,10 +32,10 @@ function handleComposerInput(){autoResizeTextarea();maybeVirtualizePrompt();}
 function maybeVirtualizePrompt(){const input=$('message-input');if(!input)return;const value=input.value;const lineCount=value.split('\n').length;if(value.length<longPromptThreshold&&lineCount<longLineThreshold)return;const virtualFile=createVirtualFile(value);state.virtualFiles.push(virtualFile);input.value='';autoResizeTextarea();renderFilePreview();showToast(`${virtualFile.name} attached as context`,'success');}
 function createVirtualFile(content){const kind=detectVirtualFileKind(content);const index=state.virtualFiles.length+1;return{id:`virtual-${Date.now()}-${index}`,name:`${kind.base}-${index}.${kind.ext}`,size:new Blob([content]).size,type:kind.type,virtual:true,content};}
 function detectVirtualFileKind(text){const trimmed=text.trim();if(/^\s*[{[]/.test(trimmed))return{base:'data',ext:'json',type:'JSON'};if(/^---\n|:\s*\n\s+-\s/.test(trimmed))return{base:'config',ext:'yaml',type:'YAML'};if(/^#\s|```|^\|.+\|/m.test(trimmed))return{base:'notes',ext:'md',type:'Markdown'};if(/Traceback|ERROR|WARN|INFO|\[[0-9: -]+\]/i.test(trimmed))return{base:'server',ext:'log',type:'Log'};if(/def\s+\w+\(|import\s+\w+|from\s+\w+\s+import/.test(trimmed))return{base:'script',ext:'py',type:'Python'};if(/const\s+\w+|function\s+\w+|=>|import .* from/.test(trimmed))return{base:'app',ext:'js',type:'JavaScript'};if(/,/.test(trimmed.split('\n')[0]||'')&&trimmed.split('\n').length>4)return{base:'table',ext:'csv',type:'CSV'};return{base:'document',ext:'txt',type:'Text'};}
-async function sendMessage(){const input=$('message-input');const typedMessage=input.value.trim();if(!typedMessage&&!state.virtualFiles.length&&!state.pendingFiles.length)return;if(state.isStreaming)return;const payloadMessage=buildPayloadMessage(typedMessage);const displayMessage=typedMessage||`Attached ${state.virtualFiles.length+state.pendingFiles.length} file${state.virtualFiles.length+state.pendingFiles.length===1?'':'s'}.`;input.value='';autoResizeTextarea();$('welcome-screen').classList.add('hidden');$('messages-container').classList.remove('hidden');appendMessage('user',displayMessage,null,false,false,[...state.virtualFiles,...state.pendingFiles]);setStreamingUi(true);startSandboxTask(inferTaskName(payloadMessage));const skeletonId=showSkeleton();state.abortController=new AbortController();let assistantEl=null;let rawContent='';try{const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:state.abortController.signal,body:JSON.stringify({message:payloadMessage,conversation_id:state.currentConversationId,agent_id:state.currentAgentId})});removeElement(skeletonId);if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.detail||`HTTP ${res.status}`);}if(!res.body)throw new Error('Streaming is not available in this browser.');assistantEl=appendMessage('assistant','',null,false,true);const contentEl=assistantEl.querySelector('.message-content');const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';while(true){const{done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split('\n\n');buffer=events.pop()||'';for(const eventText of events){const payload=parseSsePayload(eventText);if(!payload)continue;if(payload.type==='meta')state.currentConversationId=payload.conversation_id;if(payload.type==='token'){rawContent+=cleanDisplayContent(payload.content||'');renderMessageContent(contentEl,rawContent);scrollToBottom();}}}if(!rawContent.trim()){assistantEl?.remove();appendMessage('assistant','**No response returned.** Please check the active model and API configuration.');}else{assistantEl.classList.remove('streaming');assistantEl.querySelector('.thinking-badge')?.remove();assistantEl.querySelector('.stream-cursor')?.remove();await enhanceMarkdown(assistantEl);}completeSandboxTask('Completed');await loadConversations();}catch(error){removeElement(skeletonId);if(assistantEl&&!rawContent.trim())assistantEl.remove();const msg=error.name==='AbortError'?'Generation cancelled.':`**Connection error:** ${error.message}`;appendMessage('assistant',msg);completeSandboxTask(error.name==='AbortError'?'Cancelled':'Needs attention',true);showToast(error.name==='AbortError'?'Generation cancelled':error.message,error.name==='AbortError'?'warning':'error');}finally{setStreamingUi(false);state.abortController=null;state.virtualFiles=[];state.pendingFiles=[];renderFilePreview();scrollToBottom();}}
+async function sendMessage(){const input=$('message-input');const typedMessage=input.value.trim();if(!typedMessage&&!state.virtualFiles.length&&!state.pendingFiles.length)return;if(state.isStreaming)return;const payloadMessage=buildPayloadMessage(typedMessage);const displayMessage=typedMessage||`Attached ${state.virtualFiles.length+state.pendingFiles.length} file${state.virtualFiles.length+state.pendingFiles.length===1?'':'s'}.`;input.value='';autoResizeTextarea();$('welcome-screen').classList.add('hidden');$('messages-container').classList.remove('hidden');appendMessage('user',displayMessage,null,false,false,[...state.virtualFiles,...state.pendingFiles]);setStreamingUi(true);startSandboxTask(inferTaskName(payloadMessage));const skeletonId=showSkeleton();state.abortController=new AbortController();let assistantEl=null;let rawContent='';try{const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},signal:state.abortController.signal,body:JSON.stringify({message:payloadMessage,conversation_id:state.currentConversationId,agent_id:state.currentAgentId})});removeElement(skeletonId);if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.detail||`HTTP ${res.status}`);}if(!res.body)throw new Error('Streaming is not available in this browser.');assistantEl=appendMessage('assistant','',null,false,true);const contentEl=assistantEl.querySelector('.message-content');const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';while(true){const{done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split('\n\n');buffer=events.pop()||'';for(const eventText of events){const payload=parseSsePayload(eventText);if(!payload)continue;if(payload.type==='meta')state.currentConversationId=payload.conversation_id;if(payload.type==='text'||payload.type==='token'){rawContent+=cleanDisplayContent(payload.content||'');renderMessageContent(contentEl,rawContent);scrollToBottom();}else if(payload.type==='progress'){renderStreamProgress(payload);}}}if(!rawContent.trim()){assistantEl?.remove();appendMessage('assistant','**No response returned.** Please check the active model and API configuration.');}else{assistantEl.classList.remove('streaming');assistantEl.querySelector('.thinking-badge')?.remove();assistantEl.querySelector('.stream-cursor')?.remove();await enhanceMarkdown(assistantEl);}completeSandboxTask('Completed');await loadConversations();}catch(error){removeElement(skeletonId);if(assistantEl&&!rawContent.trim())assistantEl.remove();const msg=error.name==='AbortError'?'Generation cancelled.':`**Connection error:** ${error.message}`;appendMessage('assistant',msg);completeSandboxTask(error.name==='AbortError'?'Cancelled':'Needs attention',true);showToast(error.name==='AbortError'?'Generation cancelled':error.message,error.name==='AbortError'?'warning':'error');}finally{setStreamingUi(false);state.abortController=null;state.virtualFiles=[];state.pendingFiles=[];renderFilePreview();scrollToBottom();}}
 function buildPayloadMessage(message){const modeInstruction=`[Agent mode: ${state.currentMode}]\nAll code execution, browser automation, document conversion, and generation tasks must be planned for the E2B Sandbox. The browser UI is progress-only.\n`;const virtualContext=state.virtualFiles.map((file)=>`\n\n[Virtual attachment: ${file.name} | ${file.type} | ${formatFileSize(file.size)}]\n${file.content}`).join('');const fileContext=state.pendingFiles.map((file)=>`\n\n[Attached file reference: ${file.name} | ${file.type||'unknown'} | ${formatFileSize(file.size)}]`).join('');return`${modeInstruction}\n${message||'Use the attached context.'}${virtualContext}${fileContext}`;}
 function inferTaskName(message){if(/deploy/i.test(message))return'Deploying';if(/website|landing|dashboard|app|ui/i.test(message))return'Building Workspace';if(/pdf|docx|presentation|pptx|slides/i.test(message))return'Generating Document';if(/research|source|analy/i.test(message))return'Researching';if(/api|code|python|node|debug/i.test(message))return'Running Sandbox';return'Thinking';}
-function parseSsePayload(eventText){const data=eventText.split('\n').filter((line)=>line.startsWith('data:')).map((line)=>line.slice(5).trim()).join('\n');if(!data||data==='[DONE]')return null;try{return JSON.parse(data);}catch{return null;}}
+function renderStreamProgress(payload){const label=payload.step||payload.phase||payload.status||'Working';const panel=$('sandbox-panel');if(panel){$('sandbox-summary-text').textContent=String(label).replace(/[-_]/g,' ')+'...';panel.classList.remove('idle');}}function parseSsePayload(eventText){const data=eventText.split('\n').filter((line)=>line.startsWith('data:')).map((line)=>line.slice(5).trim()).join('\n');if(!data||data==='[DONE]')return null;try{return JSON.parse(data);}catch{return null;}}
 function setStreamingUi(isStreaming){state.isStreaming=isStreaming;$('send-btn').classList.toggle('is-generating',isStreaming);$('send-btn').innerHTML=`<i data-lucide="${isStreaming?'square':'send'}"></i>`;refreshIcons();}
 function cancelStreaming(){state.abortController?.abort();}
 function showSkeleton(){const id=`skeleton-${Date.now()}`;const el=document.createElement('article');el.id=id;el.className='message-wrapper assistant';el.innerHTML=`<div class="message-meta"><span class="message-role"><span class="thinking-badge"></span>OmniClient</span></div><div class="message-bubble"><div class="message-content"><p>Preparing...</p></div></div>`;$('messages-container').appendChild(el);scrollToBottom(true);return id;}
@@ -85,21 +85,35 @@ function escapeHtml(text){return String(text??'').replace(/[&<>"']/g,(m)=>({'&':
    ═══════════════════════════════════════════════════════ */
 
 // Slide builder state
-var sbTemplate = 'Bold Blue';
+var sbTemplate = 'Editorial';
+var sbTone = 'Professional';
 
-function openSlideBuilder(event) {
+function toggleSlideBuilderAccordion(event) {
   if (event) event.preventDefault();
   var panel = document.getElementById('slide-builder-panel');
   if (!panel) return;
-  panel.style.display = 'flex';
-  setTimeout(function () { panel.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80);
-  var input = document.getElementById('sb-topic');
-  if (input) input.focus();
+  var isOpen = panel.classList.contains('open');
+  if (isOpen) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  } else {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    var input = document.getElementById('sb-topic');
+    if (input) input.focus();
+  }
+}
+
+function openSlideBuilder(event) {
+  toggleSlideBuilderAccordion(event);
 }
 
 function closeSlideBuilder() {
   var panel = document.getElementById('slide-builder-panel');
-  if (panel) panel.style.display = 'none';
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function setSBTopic(btn) {
@@ -107,10 +121,18 @@ function setSBTopic(btn) {
   if (input) { input.value = btn.textContent.trim(); input.focus(); }
 }
 
+// Select template card
 function selectSBTemplate(card) {
   document.querySelectorAll('.template-card').forEach(function (c) { c.classList.remove('selected'); });
   card.classList.add('selected');
-  sbTemplate = card.dataset.template || 'Bold Blue';
+  sbTemplate = card.dataset.template || 'Editorial';
+}
+
+// Select tone option
+function selectSBTone(btn) {
+  document.querySelectorAll('.sb-tone-btn').forEach(function (b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  sbTone = btn.dataset.tone || 'Professional';
 }
 
 async function generatePresentation() {
@@ -120,15 +142,119 @@ async function generatePresentation() {
 
   var slideCount = parseInt((document.getElementById('sb-slide-count') || {}).value || '10', 10);
   var btn = document.getElementById('sb-generate-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Initializing...'; }
 
   closeSlideBuilder();
   startNewChat();
-  // Show user message immediately
   appendMessage('user', 'Create a presentation: ' + topic + ' (' + slideCount + ' slides, ' + sbTemplate + ' template)');
 
+  // 1. Append Assistant Progress Tracker Placeholder
+  const trackerId = 'tracker-' + Date.now();
+  const wrapper = document.createElement('article');
+  wrapper.className = `message-wrapper assistant streaming`;
+  wrapper.id = trackerId;
+  
+  wrapper.innerHTML = `
+    <div class="message-meta">
+      <span class="message-role"><span class="thinking-badge"></span>OmniClient Presentation Agent</span>
+      <span>Generating</span>
+    </div>
+    <div class="message-bubble">
+      <div class="message-content">
+        <!-- Sticky Tracker Card -->
+        <div class="task-tracker-card bg-[#151c2c] text-slate-100 p-5 rounded-2xl border border-white/10 space-y-4 my-2 shadow-2xl">
+          <h4 class="font-bold text-sm text-cyan-400 flex items-center gap-2">
+            <i class="fas fa-magic"></i> Live Presentation Construction
+          </h4>
+          
+          <div class="space-y-3.5">
+            <!-- Step 1: Research -->
+            <div id="step-research" class="flex items-center justify-between text-xs text-slate-400">
+              <div class="flex items-center space-x-2.5">
+                <span class="step-status-icon text-cyan-400 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
+                <span class="font-semibold text-slate-300">1. Real-time Web Research</span>
+              </div>
+              <span class="step-timer text-[10px] font-mono">0.0s</span>
+            </div>
+            <div id="status-research-details" class="text-[11px] text-slate-500 pl-7 italic">Waiting to search...</div>
+
+            <!-- Step 2: Outline -->
+            <div id="step-outline" class="flex items-center justify-between text-xs text-slate-400">
+              <div class="flex items-center space-x-2.5">
+                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
+                <span class="font-semibold text-slate-500">2. Slide Outline Generation</span>
+              </div>
+              <span class="step-timer text-[10px] font-mono">0.0s</span>
+            </div>
+            <div id="status-outline-details" class="text-[11px] text-slate-400 pl-7 hidden space-y-1 py-1"></div>
+
+            <!-- Step 3: Generating -->
+            <div id="step-generating" class="flex items-center justify-between text-xs text-slate-400">
+              <div class="flex items-center space-x-2.5">
+                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
+                <span class="font-semibold text-slate-500">3. Live Slide Construction</span>
+              </div>
+              <span class="step-timer text-[10px] font-mono">0.0s</span>
+            </div>
+            <div id="status-generating-details" class="text-[11px] text-slate-400 pl-7 hidden font-semibold text-cyan-400 mb-1">0 / 0 slides generated</div>
+            
+            <!-- Live Grid of Slides -->
+            <div id="live-slides-container" class="grid grid-cols-2 gap-3 pl-7 mt-3 hidden"></div>
+
+            <!-- Step 4: Deliver -->
+            <div id="step-deliver" class="flex items-center justify-between text-xs text-slate-400">
+              <div class="flex items-center space-x-2.5">
+                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
+                <span class="font-semibold text-slate-500">4. Final PPTX Compilation</span>
+              </div>
+              <span class="step-timer text-[10px] font-mono">0.0s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  $('messages-container').appendChild(wrapper);
+  refreshIcons();
+  scrollToBottom();
+
+  // Timer variables
+  let activeStep = 'research';
+  let stepTimers = { research: 0, outline: 0, generating: 0, deliver: 0 };
+  let timerInterval = setInterval(() => {
+    if (activeStep) {
+      stepTimers[activeStep] += 0.1;
+      const timerEl = wrapper.querySelector(`#step-${activeStep} .step-timer`);
+      if (timerEl) timerEl.textContent = stepTimers[activeStep].toFixed(1) + 's';
+    }
+  }, 100);
+
+  function setStepActive(stepId) {
+    activeStep = stepId;
+    const stepEl = wrapper.querySelector(`#step-${stepId}`);
+    if (!stepEl) return;
+    
+    stepEl.classList.remove('text-slate-400');
+    const label = stepEl.querySelector('span.font-semibold');
+    if (label) label.className = "font-bold text-slate-200";
+    const statusIcon = stepEl.querySelector('.step-status-icon');
+    if (statusIcon) statusIcon.innerHTML = `<span class="thinking-badge" style="background:#06B6D4;box-shadow:0 0 0 4px rgba(6,182,212,0.25);margin-right:4px"></span>`;
+  }
+
+  function setStepCompleted(stepId) {
+    const stepEl = wrapper.querySelector(`#step-${stepId}`);
+    if (!stepEl) return;
+    
+    const label = stepEl.querySelector('span.font-semibold, span.font-bold');
+    if (label) label.className = "font-semibold text-slate-400 line-through opacity-75";
+    const statusIcon = stepEl.querySelector('.step-status-icon');
+    if (statusIcon) statusIcon.innerHTML = `<span class="text-emerald-500 font-bold" style="font-size:14px;margin-right:2px">✓</span>`;
+  }
+
+  setStepActive('research');
+
   try {
-    var res = await fetch('/api/presentations/generate', {
+    const res = await fetch('/api/presentations/generate/stream', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -140,23 +266,112 @@ async function generatePresentation() {
     });
 
     if (!res.ok) {
-      var err = await res.json();
-      appendMessage('assistant', 'Sorry, presentation generation failed: ' + (err.detail || 'Unknown error'));
-      showToast('Generation failed', 'error');
-      return;
+      throw new Error(`HTTP ${res.status}`);
     }
 
-    var data = await res.json();
-    // Reload projects list
-    await loadProjects();
-    // Inject result card into chat
-    var cardHtml = buildPresCardHtml(data);
-    appendMessage('assistant', 'Your presentation is ready! 🎉\n\n' + cardHtml);
-    showToast('Presentation generated!', 'success');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-  } catch (ex) {
-    appendMessage('assistant', 'Network error generating presentation: ' + ex.message);
-    showToast('Network error', 'error');
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const eventText of events) {
+        const payload = parseSsePayload(eventText);
+        if (!payload) continue;
+
+        if (payload.type === 'meta') {
+          state.currentConversationId = payload.conversation_id;
+        }
+
+        if (payload.type === 'progress') {
+          if (payload.phase === 'researching') {
+            if (payload.query) {
+              wrapper.querySelector('#status-research-details').textContent = `Searching: "${payload.query}"...`;
+            } else if (payload.status === 'completed') {
+              wrapper.querySelector('#status-research-details').innerHTML = `<span class="text-emerald-400">Research Complete.</span> Synthesized findings.`;
+              setStepCompleted('research');
+              setStepActive('outline');
+            }
+          }
+
+          if (payload.phase === 'outlining') {
+            const outlineDetails = wrapper.querySelector('#status-outline-details');
+            if (outlineDetails && payload.slides) {
+              outlineDetails.classList.remove('hidden');
+              outlineDetails.innerHTML = payload.slides.map(s => 
+                `<div class="text-[10px] text-slate-400"><b class="text-slate-300">Slide ${s.slide_number}:</b> ${escapeHtml(s.title)}</div>`
+              ).join('');
+            }
+          }
+
+          if (payload.phase === 'generating') {
+            if (activeStep === 'outline') {
+              setStepCompleted('outline');
+              setStepActive('generating');
+              wrapper.querySelector('#status-generating-details').classList.remove('hidden');
+              wrapper.querySelector('#live-slides-container').classList.remove('hidden');
+            }
+
+            wrapper.querySelector('#status-generating-details').textContent = `${payload.slide_number} / ${payload.total} slides constructed`;
+            
+            const slideContainer = wrapper.querySelector('#live-slides-container');
+            if (slideContainer && payload.slide_html) {
+              const div = document.createElement('div');
+              div.className = 'slide-preview-wrapper scale-[0.9] origin-top-left transition-all duration-300 transform';
+              div.style.marginBottom = "-12px"; 
+              div.innerHTML = payload.slide_html;
+              slideContainer.appendChild(div);
+              scrollToBottom();
+            }
+          }
+
+          if (payload.phase === 'done') {
+            setStepCompleted('generating');
+            setStepActive('deliver');
+            
+            clearInterval(timerInterval);
+            setStepCompleted('deliver');
+            activeStep = null;
+
+            const finalCard = buildPresCardHtml(payload);
+            const messageBubble = wrapper.querySelector('.message-content');
+            
+            wrapper.querySelector('#status-research-details').classList.add('hidden');
+            wrapper.querySelector('#status-outline-details').classList.add('hidden');
+            wrapper.querySelector('#status-generating-details').classList.add('hidden');
+            wrapper.querySelector('#live-slides-container').classList.add('hidden');
+            
+            const doneNode = document.createElement('div');
+            doneNode.className = "mt-4 border-t border-white/10 pt-4";
+            doneNode.innerHTML = `<p class="text-sm font-semibold mb-2">Your presentation is ready! 🎉</p>${finalCard}`;
+            messageBubble.appendChild(doneNode);
+            
+            wrapper.classList.remove('streaming');
+            wrapper.querySelector('.thinking-badge')?.remove();
+            
+            showToast('Presentation generated successfully!', 'success');
+            await loadProjects();
+            refreshIcons();
+            scrollToBottom();
+          }
+        }
+      }
+    }
+  } catch (error) {
+    clearInterval(timerInterval);
+    const messageBubble = wrapper.querySelector('.message-content');
+    if (messageBubble) {
+      const errNode = document.createElement('div');
+      errNode.className = "mt-3 text-xs text-red-400 font-semibold";
+      errNode.textContent = `⚠️ Presentation build failed: ${error.message}`;
+      messageBubble.appendChild(errNode);
+    }
+    showToast(`Generation failed: ${error.message}`, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '✨ Generate Presentation'; }
   }
@@ -185,7 +400,7 @@ function openSlidesPreview(id, slidesJsonStr) {
   var slidesJson = [];
   try { slidesJson = JSON.parse(slidesJsonStr); } catch (e) {}
   var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(slidesJson))));
-  frame.src = '/slides-preview?id=' + id + '&data=' + b64;
+  frame.src = '/slides-preview?id=' + id + '&data=' + b64 + '&editor=true';
   overlay.classList.remove('hidden');
 }
 
@@ -223,6 +438,7 @@ async function loadProjects() {
     projectsCache = [];
   }
   if (state.historyFilter === 'projects') renderProjectList();
+  renderWelcomeProjects();
 }
 
 function renderProjectList() {
@@ -270,3 +486,226 @@ function timeAgo(isoStr) {
   if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
   return Math.floor(diff / 86400) + 'd ago';
 }
+
+/* ═══════════════════════════════════════════════════════
+   ACTION PILLS SYSTEM (Phase 3 Inline UI)
+   ═══════════════════════════════════════════════════════ */
+function initActionPills() {
+  // Wire pill clicks
+  document.querySelectorAll('.action-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pillId = pill.dataset.pill;
+      handlePillClick(pillId);
+    });
+  });
+
+  // Wire sub-panel close buttons
+  document.querySelectorAll('.subpanel-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kind = btn.dataset.close;
+      const subpanel = $('subpanel-' + kind);
+      if (subpanel) {
+        subpanel.classList.remove('open');
+        subpanel.setAttribute('aria-hidden', 'true');
+      }
+      $('pill-' + kind)?.classList.remove('active');
+    });
+  });
+
+  // Wire sub-option cards with prompts
+  document.querySelectorAll('.subopt-card[data-prompt]').forEach(card => {
+    card.addEventListener('click', () => {
+      const promptText = card.dataset.prompt;
+      fillComposerPrompt(promptText);
+      
+      // Close containing subpanel
+      const parentPanel = card.closest('.pill-subpanel');
+      if (parentPanel) {
+        parentPanel.classList.remove('open');
+        parentPanel.setAttribute('aria-hidden', 'true');
+      }
+      document.querySelectorAll('.action-pill').forEach(p => p.classList.remove('active'));
+    });
+  });
+
+  // Wire slide sub-option cards to open slide builder accordion
+  document.querySelectorAll('.subopt-card[data-open-sb]').forEach(card => {
+    card.addEventListener('click', () => {
+      const topic = card.dataset.openSb;
+      handleSlideCardClick(topic);
+    });
+  });
+
+  // Wire more dropdown items
+  document.querySelectorAll('.pill-more-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const action = item.dataset.action;
+      let promptText = '';
+      switch (action) {
+        case 'video':
+          promptText = 'Create a short video script and storyboard for: ';
+          break;
+        case 'scheduled':
+          promptText = 'Schedule a task to run automatically every day at 9 AM: ';
+          break;
+        case 'research':
+          promptText = 'Conduct a wide research project and compile references for: ';
+          break;
+        case 'spreadsheet':
+          promptText = 'Create a spreadsheet template with formulas and sample data for: ';
+          break;
+        case 'viz':
+          promptText = 'Generate a data visualization chart from this dataset: ';
+          break;
+        case 'audio':
+          promptText = 'Generate or analyze audio transcript for: ';
+          break;
+        case 'chatmode':
+          promptText = 'Let\'s chat about: ';
+          break;
+        case 'automation':
+          promptText = 'Build an integration workflow to sync data between: ';
+          break;
+      }
+      fillComposerPrompt(promptText);
+      
+      // Close more menu
+      const menu = $('pill-more-menu');
+      menu.classList.remove('open');
+      menu.setAttribute('aria-hidden', 'true');
+      $('pill-more')?.classList.remove('open');
+    });
+  });
+
+  // Close menus/subpanels on document click
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.action-pill') && !e.target.closest('.pill-subpanel') && !e.target.closest('.pill-more-menu') && !e.target.closest('.sb-accordion')) {
+      // Hide all subpanels
+      document.querySelectorAll('.pill-subpanel').forEach(p => {
+        p.classList.remove('open');
+        p.setAttribute('aria-hidden', 'true');
+      });
+      // Deactivate pills
+      document.querySelectorAll('.action-pill').forEach(p => p.classList.remove('active'));
+      // Hide more menu
+      const menu = $('pill-more-menu');
+      if (menu) {
+        menu.classList.remove('open');
+        menu.setAttribute('aria-hidden', 'true');
+      }
+      $('pill-more')?.classList.remove('open');
+    }
+  });
+}
+
+function handlePillClick(pillId) {
+  // Hide other subpanels
+  document.querySelectorAll('.pill-subpanel').forEach(p => {
+    if (p.id !== 'subpanel-' + pillId) {
+      p.classList.remove('open');
+      p.setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  // Deactivate all pills except clicked
+  document.querySelectorAll('.action-pill').forEach(p => {
+    if (p.dataset.pill !== pillId) p.classList.remove('active');
+  });
+
+  if (pillId === 'more') {
+    const menu = $('pill-more-menu');
+    const pill = $('pill-more');
+    const isOpen = menu.classList.contains('open');
+    if (isOpen) {
+      menu.classList.remove('open');
+      menu.setAttribute('aria-hidden', 'true');
+      pill.classList.remove('open');
+    } else {
+      menu.classList.add('open');
+      menu.setAttribute('aria-hidden', 'false');
+      pill.classList.add('open');
+    }
+    closeSlideBuilder();
+    return;
+  } else {
+    const menu = $('pill-more-menu');
+    if (menu) {
+      menu.classList.remove('open');
+      menu.setAttribute('aria-hidden', 'true');
+    }
+    $('pill-more')?.classList.remove('open');
+  }
+
+  const subpanel = $('subpanel-' + pillId);
+  const pillBtn = $('pill-' + pillId);
+  if (!subpanel) return;
+
+  const isOpen = subpanel.classList.contains('open');
+  if (isOpen) {
+    subpanel.classList.remove('open');
+    subpanel.setAttribute('aria-hidden', 'true');
+    pillBtn?.classList.remove('active');
+  } else {
+    subpanel.classList.add('open');
+    subpanel.setAttribute('aria-hidden', 'false');
+    pillBtn?.classList.add('active');
+    closeSlideBuilder();
+  }
+}
+
+function handleSlideCardClick(topic) {
+  // Close slides subpanel
+  const subpanel = $('subpanel-slides');
+  if (subpanel) {
+    subpanel.classList.remove('open');
+    subpanel.setAttribute('aria-hidden', 'true');
+  }
+  $('pill-slides')?.classList.remove('active');
+
+  // Toggle slide builder
+  var panel = document.getElementById('slide-builder-panel');
+  if (panel) {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+  }
+  var input = document.getElementById('sb-topic');
+  if (input) {
+    input.value = topic;
+    input.focus();
+  }
+}
+
+function fillComposerPrompt(text) {
+  const input = $('message-input');
+  if (input) {
+    input.value = text;
+    autoResizeTextarea();
+    input.focus();
+    // Scroll cursor to end of text
+    input.setSelectionRange(text.length, text.length);
+  }
+}
+
+function renderWelcomeProjects() {
+  const panel = $('welcome-projects');
+  const list = $('welcome-projects-list');
+  if (!panel || !list) return;
+  if (!projectsCache || !projectsCache.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  // Render up to 3 newest projects
+  list.innerHTML = projectsCache.slice(0, 3).map(function(p) {
+    var ago = p.created_at ? timeAgo(p.created_at) : '';
+    return '<div class="welcome-project-card" onclick="openSlidesPreview(' + p.id + ', \'' + escapeHtml(JSON.stringify(p.slides || [])).replace(/'/g, "\\'") + '\')">' +
+      '<span class="welcome-project-card-icon">📊</span>' +
+      '<div class="welcome-project-card-title">' + escapeHtml(p.title || p.topic) + '</div>' +
+      '<div class="welcome-project-card-meta">' + escapeHtml(p.template) + ' &middot; ' + p.slide_count + ' slides &middot; ' + ago + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+

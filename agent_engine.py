@@ -189,7 +189,7 @@ def _get_meaningful_error(e: Exception) -> str:
 
 def chat_stream(
     user_message: str,
-    conversation_id: int,
+    conversation_id: Optional[int],
     db: Session,
     agent: Optional[Agent] = None,
 ) -> Iterator[str]:
@@ -207,7 +207,7 @@ def chat_stream(
     messages: List[Dict] = [{"role": "system", "content": system_prompt}]
 
     # Inject relevant memories
-    if _should_recall_memory(user_message):
+    if conversation_id and _should_recall_memory(user_message):
         try:
             memories = retrieve_relevant_memories(db, conversation_id, user_message, top_k=3)
             if memories:
@@ -234,20 +234,22 @@ def chat_stream(
             print(f"[CHAT] Search unavailable: {e}")
 
     # Add conversation history
-    try:
-        history = get_short_term_messages(db, conversation_id, limit=10)
-        messages.extend(history)
-    except Exception as he:
-        print(f"[CHAT] History retrieval error: {he}")
+    if conversation_id:
+        try:
+            history = get_short_term_messages(db, conversation_id, limit=10)
+            messages.extend(history)
+        except Exception as he:
+            print(f"[CHAT] History retrieval error: {he}")
 
     # Add current user message
     messages.append({"role": "user", "content": user_message})
 
     # Save user message to DB
-    try:
-        _save_message(db, conversation_id, "user", user_message)
-    except Exception as se:
-        print(f"[CHAT] Message save error: {se}")
+    if conversation_id:
+        try:
+            _save_message(db, conversation_id, "user", user_message)
+        except Exception as se:
+            print(f"[CHAT] Message save error: {se}")
 
     # Stream from OpenRouter with fallback
     full_response = ""
@@ -338,18 +340,20 @@ def chat_stream(
     full_response = clean_response(full_response)
 
     # Save assistant response
-    if full_response:
+    if full_response and conversation_id:
         metadata = {"reasoning_details": reasoning_details} if reasoning_details else None
         _save_message(db, conversation_id, "assistant", full_response, metadata=metadata)
 
     # Auto-update conversation title on first exchange
-    _maybe_update_title(db, conversation_id, user_message, client)
+    if conversation_id:
+        _maybe_update_title(db, conversation_id, user_message, client)
 
     # Trigger auto-summarization in background (non-blocking best effort)
-    try:
-        check_and_summarize(db, conversation_id, client)
-    except Exception:
-        pass
+    if conversation_id:
+        try:
+            check_and_summarize(db, conversation_id, client)
+        except Exception:
+            pass
 
 
 def chat_non_streaming(
