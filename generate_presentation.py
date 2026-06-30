@@ -1,565 +1,363 @@
+﻿"""
+generate_presentation.py — Dynamic PPTX + slides JSON generator for OmniClient.
+
+Public API
+----------
+create_presentation(topic, template, slide_count, slides_data) -> dict
+    Returns: {"file_path": str, "slides_json": list[dict]}
+
+build_slides_from_ai_response(ai_text, topic, slide_count) -> list[dict]
+    Parse structured slide JSON from an AI chat response.
+
+TEMPLATE_COLORS — dict of template name -> color constants
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import uuid
+from pathlib import Path
+from typing import Optional
+
 from pptx import Presentation
-from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
 
-def create_presentation():
-    prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
+# Directory where generated .pptx files are stored
+PRESENTATIONS_DIR = Path(__file__).parent / "presentations"
+PRESENTATIONS_DIR.mkdir(exist_ok=True)
 
-    # Color Constants (Bold Blue template)
-    ELECTRIC_BLUE = RGBColor(37, 99, 235)  # #2563EB
-    CYAN = RGBColor(6, 182, 212)       # #06B6D4
-    WHITE = RGBColor(255, 255, 255)
-    DARK_BLUE = RGBColor(30, 64, 175)   # #1E40AF
-    TEXT_MUTED = RGBColor(224, 231, 255) # #E0E7FF
+# ---------------------------------------------------------------------------
+# Template colour palettes
+# ---------------------------------------------------------------------------
 
-    def apply_slide_background(slide):
-        # Full screen background
-        bg = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Inches(7.5)
-        )
-        bg.fill.solid()
-        bg.fill.fore_color.rgb = ELECTRIC_BLUE
-        bg.line.fill.background()
-        
-        # Cyan bottom accent border
-        accent = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, Inches(0), Inches(7.2), Inches(13.333), Inches(0.3)
-        )
-        accent.fill.solid()
-        accent.fill.fore_color.rgb = CYAN
-        accent.line.fill.background()
+TEMPLATE_COLORS = {
+    "Bold Blue": {
+        "bg":       RGBColor(37,  99,  235),   # #2563EB
+        "accent":   RGBColor(6,   182, 212),   # #06B6D4
+        "card":     RGBColor(30,  64,  175),   # #1E40AF
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(224, 231, 255),   # #E0E7FF
+    },
+    "Graphite Cyan": {
+        "bg":       RGBColor(17,  24,  39),    # #111827
+        "accent":   RGBColor(34,  211, 238),   # #22D3EE
+        "card":     RGBColor(31,  41,  55),    # #1F2937
+        "text":     RGBColor(249, 250, 251),
+        "muted":    RGBColor(156, 163, 175),
+    },
+    "Freestyle": {
+        "bg":       RGBColor(99,  102, 241),   # #6366F1
+        "accent":   RGBColor(167, 139, 250),   # #A78BFA
+        "card":     RGBColor(67,  56,  202),   # #4338CA
+        "text":     RGBColor(255, 255, 255),
+        "muted":    RGBColor(224, 231, 255),
+    },
+    "Aqua Breeze": {
+        "bg":       RGBColor(224, 242, 254),   # #E0F2FE
+        "accent":   RGBColor(20,  184, 166),   # #14B8A6
+        "card":     RGBColor(240, 249, 255),   # #F0F9FF
+        "text":     RGBColor(15,  23,  42),    # #0F172A
+        "muted":    RGBColor(100, 116, 139),
+    },
+    "Emerald Edge": {
+        "bg":       RGBColor(255, 255, 255),
+        "accent":   RGBColor(16,  185, 129),   # #10B981
+        "card":     RGBColor(236, 253, 245),   # #ECFDF5
+        "text":     RGBColor(31,  41,  55),    # #1F2937
+        "muted":    RGBColor(107, 114, 128),
+    },
+    "Sandy Rhythm": {
+        "bg":       RGBColor(245, 245, 220),   # #F5F5DC beige
+        "accent":   RGBColor(139, 69,  19),    # #8B4513 saddlebrown
+        "card":     RGBColor(255, 248, 220),   # #FFF8DC cornsilk
+        "text":     RGBColor(45,  42,  38),    # #2D2A26
+        "muted":    RGBColor(120, 100, 80),
+    },
+}
+DEFAULT_TEMPLATE = "Bold Blue"
 
-    # SLIDE 1: Title
-    slide_layout = prs.slide_layouts[6]
-    slide1 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide1)
 
-    title_box = slide1.shapes.add_textbox(Inches(1.0), Inches(2.0), Inches(11.333), Inches(3.5))
-    tf1 = title_box.text_frame
-    tf1.word_wrap = True
+def _colors(template: str) -> dict:
+    return TEMPLATE_COLORS.get(template, TEMPLATE_COLORS[DEFAULT_TEMPLATE])
 
-    p = tf1.paragraphs[0]
-    p.text = "DIGITAL MARKETING STRATEGY"
-    p.font.name = "Poppins"
-    p.font.size = Pt(54)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-    p.alignment = PP_ALIGN.LEFT
 
-    p2 = tf1.add_paragraph()
-    p2.text = "FOR SAAS STARTUPS"
-    p2.font.name = "Poppins"
-    p2.font.size = Pt(48)
-    p2.font.bold = True
-    p2.font.color.rgb = CYAN
-    p2.alignment = PP_ALIGN.LEFT
+# ---------------------------------------------------------------------------
+# Slide data helpers
+# ---------------------------------------------------------------------------
 
-    p3 = tf1.add_paragraph()
-    p3.text = "Scale your audience, lower CAC, and drive sustainable growth."
-    p3.font.name = "Inter"
-    p3.font.size = Pt(20)
-    p3.font.color.rgb = TEXT_MUTED
-    p3.space_before = Pt(30)
-    p3.alignment = PP_ALIGN.LEFT
-
-    notes1 = slide1.notes_slide.notes_text_frame
-    notes1.text = "Welcome to the SaaS marketing strategy kickoff. Our key focus is maximizing distribution value by designing custom acquisition engines."
-
-    # SLIDE 2: Strategy Overview
-    slide2 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide2)
-
-    title_box2 = slide2.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box2.text_frame.paragraphs[0]
-    p.text = "STRATEGY OVERVIEW & AGENDA"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    cols = ["Target ICP", "SEO Engine", "Paid Channels", "Funnel CRO"]
-    descs = [
-        "Identify high-value user personas for sales alignment.",
-        "Produce bottom-of-funnel keywords to capture target demand.",
-        "Scale search campaigns and dynamic social remarketing.",
-        "Optimize conversion steps and onboarding pathways."
+def _default_slides(topic: str, slide_count: int) -> list[dict]:
+    """Generate a generic slide structure when no AI data is provided."""
+    title = topic.strip().title()
+    slides = [
+        {
+            "slide_number": 1,
+            "type": "title",
+            "title": title,
+            "subtitle": f"A comprehensive overview of {title}",
+            "notes": f"Welcome to this presentation on {title}.",
+        },
+        {
+            "slide_number": 2,
+            "type": "agenda",
+            "title": "Agenda",
+            "points": ["Introduction", "Key Concepts", "Analysis", "Recommendations", "Next Steps"],
+            "notes": "Overview of what will be covered in this presentation.",
+        },
     ]
-
-    for i in range(4):
-        left = Inches(1.0 + (i * 2.85))
-        top = Inches(2.2)
-        width = Inches(2.65)
-        height = Inches(4.2)
-        
-        card = slide2.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-        card.fill.solid()
-        card.fill.fore_color.rgb = DARK_BLUE
-        card.line.color.rgb = CYAN
-        card.line.width = Pt(1.5)
-        
-        tf = card.text_frame
-        tf.word_wrap = True
-        tf.margin_left = Inches(0.2)
-        tf.margin_right = Inches(0.2)
-        tf.margin_top = Inches(0.3)
-        
-        p = tf.paragraphs[0]
-        p.text = f"0{i+1}"
-        p.font.name = "Poppins"
-        p.font.size = Pt(32)
-        p.font.bold = True
-        p.font.color.rgb = CYAN
-        
-        p2 = tf.add_paragraph()
-        p2.text = cols[i]
-        p2.font.name = "Poppins"
-        p2.font.size = Pt(20)
-        p2.font.bold = True
-        p2.font.color.rgb = WHITE
-        p2.space_before = Pt(14)
-        
-        p3 = tf.add_paragraph()
-        p3.text = descs[i]
-        p3.font.name = "Inter"
-        p3.font.size = Pt(13)
-        p3.font.color.rgb = TEXT_MUTED
-        p3.space_before = Pt(10)
-
-    notes2 = slide2.notes_slide.notes_text_frame
-    notes2.text = "This slide outlines our agenda: Ideal Customer Profiles, Topical Search authority, Paid Acquisition, and Landing Page conversion optimizations."
-
-    # SLIDE 3: ICP Segment
-    slide3 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide3)
-
-    title_box3 = slide3.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box3.text_frame.paragraphs[0]
-    p.text = "DEFINING THE SAAS TARGET AUDIENCE"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    text_box3 = slide3.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(6.0), Inches(4.5))
-    tf3 = text_box3.text_frame
-    tf3.word_wrap = True
-
-    p_sub = tf3.paragraphs[0]
-    p_sub.text = "Ideal Customer Profile (ICP) Criteria:"
-    p_sub.font.name = "Poppins"
-    p_sub.font.size = Pt(22)
-    p_sub.font.bold = True
-    p_sub.font.color.rgb = CYAN
-    p_sub.space_after = Pt(14)
-
-    points = [
-        "Laser-Focus: Target marketing decision makers (VP Marketing, CMOs, CTOs).",
-        "Company Size: B2B companies with 50-200 employees.",
-        "Revenue Base: Mid-market SaaS segments between $10M-$50M ARR.",
-        "Pain Points: System integrations, security, and developer productivity."
+    content_templates = [
+        {"type": "content", "title": "Key Concepts", "points": [
+            f"Core principle 1 of {title}",
+            f"Core principle 2 of {title}",
+            f"Core principle 3 of {title}",
+        ]},
+        {"type": "content", "title": "Analysis & Insights", "points": [
+            "Data-driven insights",
+            "Market trends and patterns",
+            "Competitive landscape overview",
+        ]},
+        {"type": "content", "title": "Strategy", "points": [
+            "Short-term priorities",
+            "Medium-term goals",
+            "Long-term vision",
+        ]},
+        {"type": "content", "title": "Implementation", "points": [
+            "Phase 1: Foundation",
+            "Phase 2: Execution",
+            "Phase 3: Optimization",
+        ]},
+        {"type": "content", "title": "Results & KPIs", "points": [
+            "Key performance indicators",
+            "Success metrics",
+            "Tracking and reporting",
+        ]},
+        {"type": "content", "title": "Case Studies", "points": [
+            "Real-world example 1",
+            "Real-world example 2",
+            "Lessons learned",
+        ]},
+        {"type": "content", "title": "Challenges & Solutions", "points": [
+            "Common pitfalls",
+            "Mitigation strategies",
+            "Best practices",
+        ]},
+        {"type": "content", "title": "Tools & Resources", "points": [
+            "Essential tools",
+            "Recommended resources",
+            "Expert guidance",
+        ]},
     ]
+    for i in range(min(slide_count - 3, len(content_templates))):
+        s = content_templates[i].copy()
+        s["slide_number"] = i + 3
+        s["notes"] = f"Detailed discussion of {s['title'].lower()}."
+        slides.append(s)
+    slides.append({
+        "slide_number": len(slides) + 1,
+        "type": "cta",
+        "title": "Thank You",
+        "subtitle": "Questions & Next Steps",
+        "notes": "Open the floor for questions and outline immediate next steps.",
+    })
+    return slides[:slide_count]
 
-    for pt in points:
-        p_pt = tf3.add_paragraph()
-        p_pt.text = "• " + pt
-        p_pt.font.name = "Inter"
-        p_pt.font.size = Pt(15)
-        p_pt.font.color.rgb = WHITE
-        p_pt.space_after = Pt(10)
 
-    sb = slide3.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(7.5), Inches(2.2), Inches(4.8), Inches(4.2))
-    sb.fill.solid()
-    sb.fill.fore_color.rgb = DARK_BLUE
-    sb.line.color.rgb = CYAN
-    sb.line.width = Pt(1.5)
+def build_slides_from_ai_response(ai_text: str, topic: str, slide_count: int) -> list[dict]:
+    """
+    Extract structured slides JSON from an AI response text.
+    Looks for a JSON code block first, then falls back to _default_slides.
+    """
+    # Try ```json ... ``` block
+    m = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", ai_text, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data, list) and data:
+                return data[:slide_count]
+        except json.JSONDecodeError:
+            pass
+    # Try raw JSON array
+    m2 = re.search(r"(\[\s*\{[\s\S]*?\}\s*\])", ai_text, re.DOTALL)
+    if m2:
+        try:
+            data = json.loads(m2.group(1))
+            if isinstance(data, list) and data:
+                return data[:slide_count]
+        except json.JSONDecodeError:
+            pass
+    return _default_slides(topic, slide_count)
 
-    tf_sb = sb.text_frame
-    tf_sb.word_wrap = True
-    tf_sb.margin_left = Inches(0.4)
-    tf_sb.margin_top = Inches(0.4)
 
-    p_sb_title = tf_sb.paragraphs[0]
-    p_sb_title.text = "Persona Summary"
-    p_sb_title.font.name = "Poppins"
-    p_sb_title.font.size = Pt(20)
-    p_sb_title.font.bold = True
-    p_sb_title.font.color.rgb = CYAN
+# ---------------------------------------------------------------------------
+# PPTX rendering
+# ---------------------------------------------------------------------------
 
-    p_sb_body = tf_sb.add_paragraph()
-    p_sb_body.text = "Our target accounts have existing budgets but suffer from integration bottlenecks. We pitch speed-to-value as our core advantage over legacy players."
-    p_sb_body.font.name = "Inter"
-    p_sb_body.font.size = Pt(14)
-    p_sb_body.font.color.rgb = WHITE
-    p_sb_body.space_before = Pt(15)
+def _apply_bg(slide, colors: dict, prs_width=13.333, prs_height=7.5):
+    bg = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(0),
+        Inches(prs_width), Inches(prs_height),
+    )
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = colors["bg"]
+    bg.line.fill.background()
+    # Accent bottom stripe
+    acc = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(0), Inches(7.2),
+        Inches(prs_width), Inches(0.3),
+    )
+    acc.fill.solid()
+    acc.fill.fore_color.rgb = colors["accent"]
+    acc.line.fill.background()
 
-    notes3 = slide3.notes_slide.notes_text_frame
-    notes3.text = "Understanding the target audience reduces marketing wastage. We speak directly to business efficiency and developer resource optimization."
 
-    # SLIDE 4: SEO Strategy
-    slide4 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide4)
+def _add_text(slide, left, top, width, height, text, font_size, bold=False, color=None,
+              align=PP_ALIGN.LEFT, font_name="Inter", word_wrap=True):
+    box = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+    tf = box.text_frame
+    tf.word_wrap = word_wrap
+    p = tf.paragraphs[0]
+    p.text = text
+    p.font.name = font_name
+    p.font.size = Pt(font_size)
+    p.font.bold = bold
+    if color:
+        p.font.color.rgb = color
+    p.alignment = align
+    return box
 
-    title_box4 = slide4.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box4.text_frame.paragraphs[0]
-    p.text = "TOPICAL AUTHORITY & SEO STRUCTURE"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
 
-    seo_steps = ["01. Bottom-of-Funnel Focus", "02. Hub & Spoke Structure", "03. Inline CTA Capture"]
-    seo_descs = [
-        "Prioritize software comparison sheets and alternative pages to target transactional keyword intents.",
-        "Design key resource landing hubs supported by hyper-targeted sub-articles.",
-        "Integrate contextual signups and sandbox testing environments directly within the text layout."
-    ]
+def _render_title_slide(slide, data: dict, colors: dict):
+    _apply_bg(slide, colors)
+    _add_text(slide, 1.0, 1.8, 11.333, 2.0,
+              data.get("title", ""), 52, bold=True, color=colors["text"],
+              align=PP_ALIGN.CENTER, font_name="Poppins")
+    _add_text(slide, 1.5, 4.0, 10.333, 1.5,
+              data.get("subtitle", ""), 22, bold=False, color=colors["muted"],
+              align=PP_ALIGN.CENTER)
 
-    for i in range(3):
-        left = Inches(1.0 + (i * 3.8))
-        top = Inches(2.2)
-        width = Inches(3.6)
-        height = Inches(4.2)
-        
-        box = slide4.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-        box.fill.solid()
-        box.fill.fore_color.rgb = DARK_BLUE
-        box.line.color.rgb = CYAN
-        box.line.width = Pt(1.5)
-        
-        tf = box.text_frame
-        tf.word_wrap = True
-        tf.margin_left = Inches(0.3)
-        tf.margin_right = Inches(0.3)
-        tf.margin_top = Inches(0.4)
-        
-        p = tf.paragraphs[0]
-        p.text = seo_steps[i]
-        p.font.name = "Poppins"
-        p.font.size = Pt(18)
-        p.font.bold = True
-        p.font.color.rgb = CYAN
-        
-        p2 = tf.add_paragraph()
-        p2.text = seo_descs[i]
-        p2.font.name = "Inter"
-        p2.font.size = Pt(14)
-        p2.font.color.rgb = WHITE
-        p2.space_before = Pt(14)
 
-    notes4 = slide4.notes_slide.notes_text_frame
-    notes4.text = "SEO compounds over time. By focusing on intent and conversion, we drive down long-term CAC."
-
-    # SLIDE 5: Paid Channels
-    slide5 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide5)
-
-    title_box5 = slide5.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box5.text_frame.paragraphs[0]
-    p.text = "PAID ACQUISITION & ABM CAMPAIGNS"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    lp = slide5.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.0), Inches(2.2), Inches(5.3), Inches(4.2))
-    lp.fill.solid()
-    lp.fill.fore_color.rgb = DARK_BLUE
-    lp.line.color.rgb = CYAN
-    tf_lp = lp.text_frame
-    tf_lp.word_wrap = True
-    tf_lp.margin_left = Inches(0.4)
-    tf_lp.margin_top = Inches(0.4)
-
-    p = tf_lp.paragraphs[0]
-    p.text = "Google Ads & Search Intent"
-    p.font.name = "Poppins"
-    p.font.size = Pt(20)
-    p.font.bold = True
-    p.font.color.rgb = CYAN
-
-    p2 = tf_lp.add_paragraph()
-    p2.text = "• Target competitor term bids to capture searching prospects.\n• Send traffic to highly optimized standalone landers.\n• Capture immediate buyer intent efficiently."
-    p2.font.name = "Inter"
-    p2.font.size = Pt(14)
-    p2.font.color.rgb = WHITE
-    p2.space_before = Pt(14)
-
-    rp = slide5.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(7.0), Inches(2.2), Inches(5.3), Inches(4.2))
-    rp.fill.solid()
-    rp.fill.fore_color.rgb = DARK_BLUE
-    rp.line.color.rgb = CYAN
-    tf_rp = rp.text_frame
-    tf_rp.word_wrap = True
-    tf_rp.margin_left = Inches(0.4)
-    tf_rp.margin_top = Inches(0.4)
-
-    p = tf_rp.paragraphs[0]
-    p.text = "LinkedIn Account Targeting"
-    p.font.name = "Poppins"
-    p.font.size = Pt(20)
-    p.font.bold = True
-    p.font.color.rgb = CYAN
-
-    p2 = tf_rp.add_paragraph()
-    p2.text = "• Upload specific target account matrices for zero-waste spend.\n• Serve case studies displaying clear economic ROI calculations.\n• Distribute highly useful, download-ready resources."
-    p2.font.name = "Inter"
-    p2.font.size = Pt(14)
-    p2.font.color.rgb = WHITE
-    p2.space_before = Pt(14)
-
-    notes5 = slide5.notes_slide.notes_text_frame
-    notes5.text = "Paid acquisition combines search intent with precise account targeting to fill the pipe with high-intent buyers."
-
-    # SLIDE 6: Product-Led Growth
-    slide6 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide6)
-
-    title_box6 = slide6.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box6.text_frame.paragraphs[0]
-    p.text = "PRODUCT-LED GROWTH (PLG) LOOPS"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    plg_steps = ["Fast Aha! Moment", "Viral Referral Loops", "Value-Based Tiers"]
-    plg_descs = [
-        "Deliver instant platform utility without requiring lengthy signup or onboarding documentation.",
-        "Encourage team invitations and joint sharing directly from workspace panels.",
-        "Link pricing plans directly to feature usage bounds and workspace seat growth metrics."
-    ]
-
-    for i in range(3):
-        left = Inches(1.0 + (i * 3.8))
-        top = Inches(2.2)
-        width = Inches(3.6)
-        height = Inches(4.2)
-        
-        box = slide6.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-        box.fill.solid()
-        box.fill.fore_color.rgb = DARK_BLUE
-        box.line.color.rgb = CYAN
-        box.line.width = Pt(1.5)
-        
-        tf = box.text_frame
-        tf.word_wrap = True
-        tf.margin_left = Inches(0.3)
-        tf.margin_right = Inches(0.3)
-        tf.margin_top = Inches(0.4)
-        
-        p = tf.paragraphs[0]
-        p.text = plg_steps[i]
-        p.font.name = "Poppins"
-        p.font.size = Pt(18)
-        p.font.bold = True
-        p.font.color.rgb = CYAN
-        
-        p2 = tf.add_paragraph()
-        p2.text = plg_descs[i]
-        p2.font.name = "Inter"
-        p2.font.size = Pt(14)
-        p2.font.color.rgb = WHITE
-        p2.space_before = Pt(14)
-
-    notes6 = slide6.notes_slide.notes_text_frame
-    notes6.text = "By shifting from sales-led to product-led loops, user sharing loops act as our secondary referral marketing strategy."
-
-    # SLIDE 7: CRO & Funnel Conversion Rates
-    slide7 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide7)
-
-    title_box7 = slide7.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box7.text_frame.paragraphs[0]
-    p.text = "OPTIMIZING CONVERSION FUNNELS"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    fn = slide7.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1.0), Inches(2.2), Inches(11.333), Inches(4.2))
-    fn.fill.solid()
-    fn.fill.fore_color.rgb = DARK_BLUE
-    fn.line.color.rgb = CYAN
-    tf_fn = fn.text_frame
-    tf_fn.word_wrap = True
-    tf_fn.margin_left = Inches(0.5)
-    tf_fn.margin_top = Inches(0.5)
-
-    p = tf_fn.paragraphs[0]
-    p.text = "Strategic Conversion Optimizations:"
-    p.font.name = "Poppins"
-    p.font.size = Pt(22)
-    p.font.bold = True
-    p.font.color.rgb = CYAN
-
-    opts = [
-        "Simplifying Registration Flows: Strip out initial setup queries to lower signup friction.",
-        "Interactive Demos: Add sandbox environments directly to landing page blocks.",
-        "Targeted A/B Testing: Run ongoing headline, CTA, and social proof tests."
-    ]
-
-    for opt in opts:
-        p_opt = tf_fn.add_paragraph()
-        p_opt.text = "• " + opt
-        p_opt.font.name = "Inter"
-        p_opt.font.size = Pt(15)
-        p_opt.font.color.rgb = WHITE
-        p_opt.space_before = Pt(14)
-
-    notes7 = slide7.notes_slide.notes_text_frame
-    notes7.text = "Improving conversion rate across funnel steps has a multiplier effect on SaaS acquisition pipelines."
-
-    # SLIDE 8: Growth Metrics Dashboard
-    slide8 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide8)
-
-    title_box8 = slide8.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box8.text_frame.paragraphs[0]
-    p.text = "NORTH STAR MARKETING METRICS"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    metrics = ["4.2 : 1", "112%", "2.4%"]
-    labels = ["LTV TO CAC RATIO", "NET REVENUE RETENTION", "MONTHLY LOGO CHURN"]
-    targets = ["Target: > 3.0 : 1", "Target: > 105%", "Target: < 3.0%"]
-
-    for i in range(3):
-        left = Inches(1.0 + (i * 3.8))
-        top = Inches(2.2)
-        width = Inches(3.6)
-        height = Inches(4.2)
-        
-        card = slide8.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
-        card.fill.solid()
-        card.fill.fore_color.rgb = WHITE
-        card.line.fill.background()
-        
-        tf = card.text_frame
-        tf.word_wrap = True
-        tf.margin_top = Inches(0.6)
-        
-        p = tf.paragraphs[0]
-        p.text = labels[i]
-        p.font.name = "Inter"
-        p.font.size = Pt(12)
-        p.font.bold = True
-        p.font.color.rgb = ELECTRIC_BLUE
-        p.alignment = PP_ALIGN.CENTER
-        
-        p2 = tf.add_paragraph()
-        p2.text = metrics[i]
-        p2.font.name = "Poppins"
-        p2.font.size = Pt(44)
-        p2.font.bold = True
-        p2.font.color.rgb = DARK_BLUE
-        p2.alignment = PP_ALIGN.CENTER
-        p2.space_before = Pt(20)
-        
-        p3 = tf.add_paragraph()
-        p3.text = targets[i]
-        p3.font.name = "Inter"
-        p3.font.size = Pt(12)
-        p3.font.bold = True
-        p3.font.color.rgb = CYAN
-        p3.alignment = PP_ALIGN.CENTER
-        p3.space_before = Pt(20)
-
-    notes8 = slide8.notes_slide.notes_text_frame
-    notes8.text = "These numbers represent the financial health of the marketing engine. High NRR and LTV-to-CAC ensure profitability."
-
-    # SLIDE 9: Roadmap
-    slide9 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide9)
-
-    title_box9 = slide9.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.0))
-    p = title_box9.text_frame.paragraphs[0]
-    p.text = "12-MONTH GROWTH ROADMAP"
-    p.font.name = "Poppins"
-    p.font.size = Pt(36)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-
-    roadmap_box = slide9.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(4.5))
-    tf = roadmap_box.text_frame
+def _render_content_slide(slide, data: dict, colors: dict):
+    _apply_bg(slide, colors)
+    _add_text(slide, 1.0, 0.6, 11.333, 1.0,
+              data.get("title", ""), 34, bold=True, color=colors["text"], font_name="Poppins")
+    points = data.get("points") or data.get("bullets") or []
+    card = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.0), Inches(1.9),
+        Inches(11.333), Inches(4.8),
+    )
+    card.fill.solid()
+    card.fill.fore_color.rgb = colors["card"]
+    card.line.color.rgb = colors["accent"]
+    card.line.width = Pt(1.5)
+    tf = card.text_frame
     tf.word_wrap = True
+    tf.margin_left = Inches(0.4)
+    tf.margin_top = Inches(0.35)
+    first = True
+    for pt in points:
+        p = tf.paragraphs[0] if first else tf.add_paragraph()
+        first = False
+        p.text = "• " + str(pt)
+        p.font.name = "Inter"
+        p.font.size = Pt(16)
+        p.font.color.rgb = colors["text"]
+        p.space_before = Pt(10)
 
-    phases = ["Q1: Infrastructure Setup", "Q2: SEO & Content Launch", "Q3 & Q4: Scaling Channels"]
-    details = [
-        "Configure CRM/analytics systems, perform message tests, and optimize high-priority signups.",
-        "Begin high-intent compare campaigns and deploy central knowledge content pages.",
-        "Launch search ads, scale programmatic organic search outputs, and enable user virality points."
-    ]
 
-    for i in range(3):
-        p = tf.add_paragraph()
-        p.text = phases[i]
-        p.font.name = "Poppins"
-        p.font.size = Pt(18)
-        p.font.bold = True
-        p.font.color.rgb = CYAN
-        p.space_after = Pt(4)
-        if i > 0:
-            p.space_before = Pt(20)
-            
-        p2 = tf.add_paragraph()
-        p2.text = details[i]
-        p2.font.name = "Inter"
-        p2.font.size = Pt(14)
-        p2.font.color.rgb = WHITE
+def _render_agenda_slide(slide, data: dict, colors: dict):
+    _render_content_slide(slide, data, colors)
 
-    notes9 = slide9.notes_slide.notes_text_frame
-    notes9.text = "Our strategic implementation path moves from tracking infrastructure setup to scaling high-intent acquisition campaigns."
 
-    # SLIDE 10: Call to Action
-    slide10 = prs.slides.add_slide(slide_layout)
-    apply_slide_background(slide10)
+def _render_cta_slide(slide, data: dict, colors: dict):
+    _apply_bg(slide, colors)
+    _add_text(slide, 1.0, 2.0, 11.333, 1.8,
+              data.get("title", "Thank You"), 52, bold=True, color=colors["text"],
+              align=PP_ALIGN.CENTER, font_name="Poppins")
+    if data.get("subtitle"):
+        _add_text(slide, 1.5, 4.2, 10.333, 1.2,
+                  data["subtitle"], 22, color=colors["muted"], align=PP_ALIGN.CENTER)
 
-    title_box10 = slide10.shapes.add_textbox(Inches(1.0), Inches(1.5), Inches(11.333), Inches(1.5))
-    p = title_box10.text_frame.paragraphs[0]
-    p.text = "SCALE YOUR SAAS VENTURE"
-    p.font.name = "Poppins"
-    p.font.size = Pt(44)
-    p.font.bold = True
-    p.font.color.rgb = WHITE
-    p.alignment = PP_ALIGN.CENTER
 
-    p2 = title_box10.text_frame.add_paragraph()
-    p2.text = "Let's align acquisition channels, build topical authority, and accelerate revenue."
-    p2.font.name = "Inter"
-    p2.font.size = Pt(18)
-    p2.font.color.rgb = TEXT_MUTED
-    p2.alignment = PP_ALIGN.CENTER
-    p2.space_before = Pt(10)
+def _render_slide(prs, slide_data: dict, colors: dict):
+    layout = prs.slide_layouts[6]  # blank
+    slide = prs.slides.add_slide(layout)
+    slide_type = slide_data.get("type", "content").lower()
+    if slide_type == "title":
+        _render_title_slide(slide, slide_data, colors)
+    elif slide_type in ("agenda", "overview"):
+        _render_agenda_slide(slide, slide_data, colors)
+    elif slide_type in ("cta", "closing", "thank_you", "contact"):
+        _render_cta_slide(slide, slide_data, colors)
+    else:
+        _render_content_slide(slide, slide_data, colors)
+    # Speaker notes
+    notes = slide_data.get("notes", "")
+    if notes:
+        slide.notes_slide.notes_text_frame.text = notes
 
-    contact_box = slide10.shapes.add_textbox(Inches(3.666), Inches(3.8), Inches(6.0), Inches(2.5))
-    tf_c = contact_box.text_frame
-    tf_c.word_wrap = True
 
-    contacts = [
-        "Website: saasgrowth.com/consult",
-        "Email: partner@saasgrowth.com",
-        "Phone: 1-800-GROWTH-NOW"
-    ]
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-    for contact in contacts:
-        p_c = tf_c.add_paragraph()
-        p_c.text = contact
-        p_c.font.name = "Inter"
-        p_c.font.size = Pt(16)
-        p_c.font.color.rgb = CYAN
-        p_c.alignment = PP_ALIGN.CENTER
-        p_c.space_before = Pt(10)
+def create_presentation(
+    topic: str = "Presentation",
+    template: str = "Bold Blue",
+    slide_count: int = 10,
+    slides_data: Optional[list] = None,
+) -> dict:
+    """
+    Generate a .pptx file and return metadata.
 
-    notes10 = slide10.notes_slide.notes_text_frame
-    notes10.text = "Let's summarize the immediate next steps to kick off the execution plan and schedule the consulting call."
+    Parameters
+    ----------
+    topic       : Human-readable topic/title
+    template    : Template name from TEMPLATE_COLORS
+    slide_count : Number of slides (clamped 8–20)
+    slides_data : Optional list of slide dicts from AI; falls back to defaults
 
-    prs.save('digital_marketing_strategy_presentation.pptx')
+    Returns
+    -------
+    {
+        "file_path":   str,       # Relative path under presentations/
+        "slides_json": list[dict] # Slide data used
+    }
+    """
+    slide_count = max(8, min(20, slide_count))
+    colors = _colors(template)
+
+    if not slides_data:
+        slides_data = _default_slides(topic, slide_count)
+
+    # Build PPTX
+    prs_obj = Presentation()
+    prs_obj.slide_width  = Inches(13.333)
+    prs_obj.slide_height = Inches(7.5)
+
+    for sd in slides_data:
+        _render_slide(prs_obj, sd, colors)
+
+    # Save to presentations dir
+    safe_name = re.sub(r"[^\w\-]", "_", topic.strip().lower())[:40]
+    filename   = f"{safe_name}_{uuid.uuid4().hex[:8]}.pptx"
+    file_path  = PRESENTATIONS_DIR / filename
+    prs_obj.save(str(file_path))
+
+    return {
+        "file_path":   str(file_path),
+        "slides_json": slides_data,
+    }
+
 
 if __name__ == "__main__":
-    create_presentation()
+    result = create_presentation(
+        topic="Digital Marketing Strategy for SaaS",
+        template="Bold Blue",
+        slide_count=10,
+    )
+    print("Generated:", result["file_path"])
+    print("Slides:", len(result["slides_json"]))

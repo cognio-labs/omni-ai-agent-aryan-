@@ -333,49 +333,135 @@
   </div>
 
   <script>
+    // ── Dynamic slide loader ──────────────────────────────────────────────
+    // If ?data=BASE64 is present, render slides from JSON instead of hardcoded HTML.
+    (function () {
+      const params    = new URLSearchParams(location.search);
+      const dataParam = params.get('data');
+      const presId    = params.get('id');
+
+      if (dataParam) {
+        try {
+          const slidesData = JSON.parse(atob(dataParam));
+          renderDynamicSlides(slidesData, presId);
+        } catch (e) {
+          console.warn('[SlideForge] Could not parse ?data param:', e);
+        }
+      }
+
+      function renderDynamicSlides(slides, id) {
+        const main = document.querySelector('main');
+        if (!main) return;
+        // Clear hardcoded slides
+        main.innerHTML = '';
+
+        const TEMPLATE_COLORS = {
+          default: { bg: '#2563EB', accent: '#06B6D4', card: '#1E40AF', text: '#ffffff', muted: '#E0E7FF' }
+        };
+        const colors = TEMPLATE_COLORS.default;
+
+        slides.forEach(function (sd, idx) {
+          const section = document.createElement('section');
+          section.className = 'slide flex-col justify-center max-w-6xl w-full' + (idx === 0 ? ' active' : '');
+          section.innerHTML = buildSlideHTML(sd, colors);
+          main.appendChild(section);
+        });
+
+        // Update page title
+        const titleSlide = slides.find(function (s) { return s.type === 'title'; });
+        if (titleSlide) document.title = titleSlide.title || 'Presentation';
+
+        // Wire download button to real endpoint if id is provided
+        if (id) {
+          const dlBtn = document.querySelector('[onclick="downloadPPTX()"]');
+          if (dlBtn) {
+            dlBtn.setAttribute('onclick', '');
+            dlBtn.addEventListener('click', function () {
+              window.location.href = '/api/presentations/' + id + '/pptx';
+            });
+          }
+        }
+      }
+
+      function buildSlideHTML(sd, colors) {
+        const type = (sd.type || 'content').toLowerCase();
+        const title = escH(sd.title || '');
+
+        if (type === 'title') {
+          return '<div class="flex flex-col items-center justify-center text-center w-full h-full px-12">' +
+            '<h1 class="text-6xl font-extrabold mb-6 leading-tight">' + title + '</h1>' +
+            '<p class="text-2xl font-light text-blue-100 max-w-3xl">' + escH(sd.subtitle || '') + '</p>' +
+            '</div>';
+        }
+
+        if (type === 'cta' || type === 'closing' || type === 'thank_you') {
+          return '<div class="flex flex-col items-center justify-center text-center w-full h-full px-12">' +
+            '<h2 class="text-5xl font-extrabold mb-6">' + title + '</h2>' +
+            '<p class="text-xl text-blue-100 max-w-2xl">' + escH(sd.subtitle || '') + '</p>' +
+            '</div>';
+        }
+
+        // content / agenda
+        const points = sd.points || sd.bullets || [];
+        const pointsHTML = points.map(function (pt) {
+          return '<li class="flex items-start gap-3 text-lg"><span class="text-cyan-400 font-bold mt-1">&#x25B6;</span><span>' + escH(String(pt)) + '</span></li>';
+        }).join('');
+
+        return '<h2 class="text-4xl font-extrabold mb-8 uppercase tracking-wide text-white">' + title + '</h2>' +
+          '<div class="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-8 w-full">' +
+          '<ul class="space-y-4">' + pointsHTML + '</ul>' +
+          '</div>';
+      }
+
+      function escH(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+    })();
+
+    // ── Slide navigation ──────────────────────────────────────────────────
     let currentSlideIndex = 0;
-    const slides = document.querySelectorAll('.slide');
+    let slides = document.querySelectorAll('.slide');
     const counter = document.getElementById('slide-counter');
     const progressBar = document.getElementById('progress-bar');
 
+    // Re-query slides (dynamic render may have changed them)
+    function refreshSlides() {
+      slides = document.querySelectorAll('.slide');
+    }
+
     function updateSlides() {
-      slides.forEach((slide, index) => {
-        if (index === currentSlideIndex) {
-          slide.classList.add('active');
-        } else {
-          slide.classList.remove('active');
-        }
+      refreshSlides();
+      slides.forEach(function (slide, index) {
+        slide.classList.toggle('active', index === currentSlideIndex);
       });
-      counter.innerText = `SLIDE ${currentSlideIndex + 1} OF ${slides.length}`;
-      progressBar.style.width = `${((currentSlideIndex + 1) / slides.length) * 100}%`;
+      if (counter) counter.innerText = 'SLIDE ' + (currentSlideIndex + 1) + ' OF ' + slides.length;
+      if (progressBar) progressBar.style.width = (((currentSlideIndex + 1) / slides.length) * 100) + '%';
     }
 
     function nextSlide() {
-      if (currentSlideIndex < slides.length - 1) {
-        currentSlideIndex++;
-        updateSlides();
-      }
+      refreshSlides();
+      if (currentSlideIndex < slides.length - 1) { currentSlideIndex++; updateSlides(); }
     }
 
     function prevSlide() {
-      if (currentSlideIndex > 0) {
-        currentSlideIndex--;
-        updateSlides();
-      }
+      if (currentSlideIndex > 0) { currentSlideIndex--; updateSlides(); }
     }
 
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', function (e) {
       if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
       if (e.key === 'ArrowLeft') prevSlide();
     });
 
-    function printToPDF() {
-      window.print();
-    }
+    // Init counter after possible dynamic render
+    window.addEventListener('load', function () { updateSlides(); });
+
+    function printToPDF() { window.print(); }
 
     function downloadPPTX() {
-      alert("Invoking PPTX Generation microservice pipeline. Downloading file: digital_marketing_strategy_presentation.pptx");
+      // Fallback when no id param — show legacy alert
+      alert('To download this presentation, open it from the Projects tab where a download link is available.');
     }
   </script>
 </body>
 </html>
+

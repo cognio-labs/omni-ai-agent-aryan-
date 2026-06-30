@@ -88,3 +88,21 @@ class SearchCache(Base):
     query = Column(String(500), nullable=False, index=True)
     results_json = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+class Presentation(Base):
+    __tablename__ = "presentations"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    title           = Column(String(255), nullable=False)
+    topic           = Column(Text, nullable=False, default="")
+    template        = Column(String(100), default="Bold Blue")
+    slide_count     = Column(Integer, default=10)
+    file_path       = Column(String(500), default="")
+    slides_json     = Column(Text, default="[]")   # JSON array of slide objects
+    status          = Column(String(30), default="completed")  # generating/completed/failed
+    conversation_id = Column(
+        Integer, ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    created_at      = Column(DateTime, default=datetime.utcnow)

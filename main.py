@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import get_db, init_db
-from models import Conversation, Message, Agent, Memory
+from models import Conversation, Message, Agent, Memory, Presentation
 from memory import (
     get_memories,
     retrieve_relevant_memories,
@@ -201,6 +201,13 @@ class MemoryCreateRequest(BaseModel):
     key: str
     value: str
     importance_score: float = 1.0
+
+
+class GeneratePresentationRequest(BaseModel):
+    topic: str
+    template: str = "Bold Blue"
+    slide_count: int = 10
+    conversation_id: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -577,27 +584,169 @@ def remove_memory(memory_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# SlideForge export
+# SlideForge export (legacy - kept for backward compat)
 # ---------------------------------------------------------------------------
 
 @app.post("/api/slideforge/export/pptx")
-def slideforge_export_pptx(request: Request):
-    """Generate and return the current SlideForge PPTX deck."""
+def slideforge_export_pptx(request: Request, db: Session = Depends(get_db)):
+    """Generate default deck and return PPTX download."""
+    from generate_presentation import create_presentation
     try:
-        from generate_presentation import create_presentation
-        create_presentation()
+        result = create_presentation(topic="Digital Marketing Strategy", template="Bold Blue", slide_count=10)
     except Exception as e:
         raise HTTPException(500, f"Failed to generate PPTX: {e}")
-
-    pptx_path = Path(__file__).parent / "digital_marketing_strategy_presentation.pptx"
+    pptx_path = Path(result["file_path"])
     if not pptx_path.exists():
-        raise HTTPException(500, "PPTX generation completed but output file was not found.")
-
+        raise HTTPException(500, "PPTX file not found after generation.")
     return FileResponse(
         path=str(pptx_path),
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename="digital_marketing_strategy_presentation.pptx",
+        filename=pptx_path.name,
     )
+
+
+# ---------------------------------------------------------------------------
+# Presentations (Projects)
+# ---------------------------------------------------------------------------
+
+def _pres_row(p):
+    slides = []
+    try:
+        import json as _json
+        slides = _json.loads(p.slides_json or "[]")
+    except Exception:
+        pass
+    return {
+        "id":              p.id,
+        "title":           p.title,
+        "topic":           p.topic,
+        "template":        p.template,
+        "slide_count":     p.slide_count,
+        "file_path":       p.file_path,
+        "status":          p.status,
+        "conversation_id": p.conversation_id,
+        "created_at":      p.created_at.isoformat() if p.created_at else None,
+        "slides":          slides,
+    }
+
+
+@app.post("/api/presentations/generate")
+@limiter.limit("5/minute")
+async def generate_presentation_endpoint(
+    request: Request,
+    body: GeneratePresentationRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate a presentation from topic, persist to DB, return metadata."""
+    from generate_presentation import create_presentation, _default_slides, build_slides_from_ai_response
+
+    topic = _sanitize(body.topic)
+    if not topic:
+        raise HTTPException(400, "topic cannot be empty.")
+
+    slide_count = max(8, min(20, body.slide_count))
+    template    = body.template or "Bold Blue"
+    title       = topic.strip().title()
+    slides_data = _default_slides(topic, slide_count)
+
+    # Try SlideForge AI generation (falls back gracefully on any error)
+    try:
+        from agent_engine import chat_stream
+        slideforge = db.query(Agent).filter(Agent.name == "SlideForge").first()
+        prompt = (
+            f"Generate a JSON array of {slide_count} presentation slides for the topic: \"{topic}\".\n"
+            "Each slide must have: slide_number (int), type (title|agenda|content|cta), "
+            "title (str), subtitle (str) for title/cta slides or points (list[str] max 4) for others, notes (str).\n"
+            "Return ONLY the JSON array inside ```json ... ``` - no other text."
+        )
+        full_response = ""
+        for chunk in chat_stream(prompt, None, db, slideforge):
+            full_response += chunk
+        parsed = build_slides_from_ai_response(full_response, topic, slide_count)
+        if parsed:
+            slides_data = parsed
+    except Exception:
+        pass
+
+    try:
+        result = create_presentation(
+            topic=topic,
+            template=template,
+            slide_count=slide_count,
+            slides_data=slides_data,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"PPTX generation failed: {e}")
+
+    pres = Presentation(
+        title=title,
+        topic=topic,
+        template=template,
+        slide_count=slide_count,
+        file_path=result["file_path"],
+        slides_json=json.dumps(result["slides_json"]),
+        status="completed",
+        conversation_id=body.conversation_id,
+    )
+    db.add(pres)
+    db.commit()
+    db.refresh(pres)
+    return _pres_row(pres)
+
+
+@app.get("/api/presentations")
+def list_presentations(db: Session = Depends(get_db)):
+    """Return all presentations ordered by newest first."""
+    rows = db.query(Presentation).order_by(Presentation.created_at.desc()).all()
+    return [_pres_row(p) for p in rows]
+
+
+@app.get("/api/presentations/{pres_id}")
+def get_presentation_detail(pres_id: int, db: Session = Depends(get_db)):
+    p = db.query(Presentation).filter(Presentation.id == pres_id).first()
+    if not p:
+        raise HTTPException(404, "Presentation not found.")
+    return _pres_row(p)
+
+
+@app.get("/api/presentations/{pres_id}/pptx")
+def download_presentation_pptx(pres_id: int, db: Session = Depends(get_db)):
+    p = db.query(Presentation).filter(Presentation.id == pres_id).first()
+    if not p:
+        raise HTTPException(404, "Presentation not found.")
+    pptx_path = Path(p.file_path)
+    if not pptx_path.exists():
+        raise HTTPException(404, "PPTX file not found on disk.")
+    return FileResponse(
+        path=str(pptx_path),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename=pptx_path.name,
+    )
+
+
+@app.delete("/api/presentations/{pres_id}")
+def delete_presentation(pres_id: int, db: Session = Depends(get_db)):
+    p = db.query(Presentation).filter(Presentation.id == pres_id).first()
+    if not p:
+        raise HTTPException(404, "Presentation not found.")
+    try:
+        fp = Path(p.file_path)
+        if fp.exists():
+            fp.unlink()
+    except Exception:
+        pass
+    db.delete(p)
+    db.commit()
+    return {"status": "deleted", "id": pres_id}
+
+
+@app.get("/slides-preview", response_class=HTMLResponse)
+def slides_preview():
+    """Serve slides.html - JS reads ?data= URL param for dynamic content."""
+    slides_path = Path(__file__).parent / "slides.html"
+    if not slides_path.exists():
+        raise HTTPException(404, "slides.html not found.")
+    return HTMLResponse(content=slides_path.read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------------------
 # Deployment guide

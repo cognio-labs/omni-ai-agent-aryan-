@@ -14,7 +14,7 @@ function applyTheme(theme){const normalized=theme==='dark'?'dark':'light';state.
 function toggleTheme(){applyTheme(state.theme==='dark'?'light':'dark');}
 function setSidebar(open){state.sidebarOpen=open;$('sidebar')?.classList.toggle('collapsed',!open);}
 async function loadConversations(){try{const res=await fetch('/api/conversations');state.conversations=await res.json();renderConversationList();}catch{showToast('Failed to load conversations','error');}}
-function setHistoryFilter(filter){state.historyFilter=filter||'recent';document.querySelectorAll('.history-tab').forEach((tab)=>tab.classList.toggle('active',tab.dataset.filter===state.historyFilter));renderConversationList();}
+function setHistoryFilter(filter){state.historyFilter=filter||'recent';document.querySelectorAll('.history-tab').forEach((tab)=>tab.classList.toggle('active',tab.dataset.filter===state.historyFilter));if(filter==='projects'){loadProjects();}else{renderConversationList();}}
 function renderConversationList(){const list=$('conversations-list');if(!list)return;let conversations=[...state.conversations];if(state.historyFilter==='pinned')conversations=conversations.filter((c)=>c.pinned);if(state.historyFilter==='projects')conversations=conversations.filter((c)=>/project|build|app|site|automation/i.test(c.title||''));if(!conversations.length){list.innerHTML=`<div class="empty-history">${state.historyFilter==='recent'?'Start a new conversation.':'Nothing here yet.'}</div>`;return;}list.innerHTML=conversations.map(convHtml).join('');list.querySelectorAll('.conversation-item').forEach((item)=>item.addEventListener('click',(event)=>{if(event.target.closest('.conv-actions'))return;loadConversation(Number(item.dataset.id));}));list.querySelectorAll('.conv-pin-btn').forEach((btn)=>btn.addEventListener('click',togglePinConversation));list.querySelectorAll('.conv-delete-btn').forEach((btn)=>btn.addEventListener('click',deleteConversation));refreshIcons();}
 function convHtml(c){return `<button class="conversation-item ${c.id===state.currentConversationId?'active':''}" type="button" data-id="${c.id}"><i data-lucide="${c.pinned?'pin':'message-circle'}"></i><span class="conv-title">${escapeHtml(c.title||'New Conversation')}</span><span class="conv-actions"><span class="conv-action-btn conv-pin-btn" data-id="${c.id}" title="${c.pinned?'Unpin':'Pin'}"><i data-lucide="${c.pinned?'pin-off':'pin'}"></i></span><span class="conv-action-btn conv-delete-btn danger" data-id="${c.id}" title="Delete"><i data-lucide="trash-2"></i></span></span></button>`;}
 async function togglePinConversation(e){e.stopPropagation();const id=Number(e.currentTarget.dataset.id);const conv=state.conversations.find((c)=>c.id===id);await fetch(`/api/conversations/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:!conv?.pinned})});await loadConversations();}
@@ -78,3 +78,195 @@ function autoResizeTextarea(){const textarea=$('message-input');if(!textarea)ret
 function stripHtmlTags(text){return String(text||'').replace(/<[^>]*>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");}
 function cleanDisplayContent(text){return stripHtmlTags(text).replace(/\[TOOL:[^\]]*\]/g,'').replace(/\[THINKING:[^\]]*\]/g,'').replace(/\n{3,}/g,'\n\n');}
 function escapeHtml(text){return String(text??'').replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+
+
+/* ═══════════════════════════════════════════════════════
+   PRESENTATION SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+// Slide builder state
+var sbTemplate = 'Bold Blue';
+
+function openSlideBuilder(event) {
+  if (event) event.preventDefault();
+  var panel = document.getElementById('slide-builder-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  setTimeout(function () { panel.scrollIntoView({behavior: 'smooth', block: 'center'}); }, 80);
+  var input = document.getElementById('sb-topic');
+  if (input) input.focus();
+}
+
+function closeSlideBuilder() {
+  var panel = document.getElementById('slide-builder-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function setSBTopic(btn) {
+  var input = document.getElementById('sb-topic');
+  if (input) { input.value = btn.textContent.trim(); input.focus(); }
+}
+
+function selectSBTemplate(card) {
+  document.querySelectorAll('.template-card').forEach(function (c) { c.classList.remove('selected'); });
+  card.classList.add('selected');
+  sbTemplate = card.dataset.template || 'Bold Blue';
+}
+
+async function generatePresentation() {
+  var topic = (document.getElementById('sb-topic') || {}).value || '';
+  topic = topic.trim();
+  if (!topic) { showToast('Please enter a presentation topic first', 'warning'); return; }
+
+  var slideCount = parseInt((document.getElementById('sb-slide-count') || {}).value || '10', 10);
+  var btn = document.getElementById('sb-generate-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+  closeSlideBuilder();
+  startNewChat();
+  // Show user message immediately
+  appendMessage('user', 'Create a presentation: ' + topic + ' (' + slideCount + ' slides, ' + sbTemplate + ' template)');
+
+  try {
+    var res = await fetch('/api/presentations/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        topic: topic,
+        template: sbTemplate,
+        slide_count: slideCount,
+        conversation_id: state.currentConversationId || null
+      })
+    });
+
+    if (!res.ok) {
+      var err = await res.json();
+      appendMessage('assistant', 'Sorry, presentation generation failed: ' + (err.detail || 'Unknown error'));
+      showToast('Generation failed', 'error');
+      return;
+    }
+
+    var data = await res.json();
+    // Reload projects list
+    await loadProjects();
+    // Inject result card into chat
+    var cardHtml = buildPresCardHtml(data);
+    appendMessage('assistant', 'Your presentation is ready! 🎉\n\n' + cardHtml);
+    showToast('Presentation generated!', 'success');
+
+  } catch (ex) {
+    appendMessage('assistant', 'Network error generating presentation: ' + ex.message);
+    showToast('Network error', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Generate Presentation'; }
+  }
+}
+
+function buildPresCardHtml(data) {
+  var ago = data.created_at ? timeAgo(data.created_at) : 'just now';
+  return '<div class="pres-result-card">' +
+    '<span class="pres-result-card-icon">📊</span>' +
+    '<div class="pres-result-card-info">' +
+      '<div class="pres-result-card-title">' + escapeHtml(data.title || data.topic) + '</div>' +
+      '<div class="pres-result-card-meta">' + escapeHtml(data.template) + ' · ' + data.slide_count + ' slides · ' + ago + '</div>' +
+    '</div>' +
+    '<div class="pres-result-actions">' +
+      '<button class="composer-icon" title="Preview slides" onclick="openSlidesPreview(' + data.id + ', ' + JSON.stringify(JSON.stringify(data.slides || [])) + ')"><i data-lucide="eye"></i></button>' +
+      '<a href="/api/presentations/' + data.id + '/pptx" class="composer-icon" title="Download PPTX" download><i data-lucide="download"></i></a>' +
+      '<button class="composer-icon" title="Delete" onclick="deletePresentation(' + data.id + ', this)"><i data-lucide="trash-2"></i></button>' +
+    '</div>' +
+  '</div>';
+}
+
+function openSlidesPreview(id, slidesJsonStr) {
+  var overlay = document.getElementById('slides-modal-overlay');
+  var frame = document.getElementById('slides-modal-frame');
+  if (!overlay || !frame) return;
+  var slidesJson = [];
+  try { slidesJson = JSON.parse(slidesJsonStr); } catch (e) {}
+  var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(slidesJson))));
+  frame.src = '/slides-preview?id=' + id + '&data=' + b64;
+  overlay.classList.remove('hidden');
+}
+
+function closeSlidesModal(event) {
+  if (event && event.target !== document.getElementById('slides-modal-overlay') && !event.target.classList.contains('slides-modal-close')) return;
+  var overlay = document.getElementById('slides-modal-overlay');
+  if (overlay) { overlay.classList.add('hidden'); }
+  var frame = document.getElementById('slides-modal-frame');
+  if (frame) frame.src = 'about:blank';
+}
+
+async function deletePresentation(id, btn) {
+  if (!confirm('Delete this presentation?')) return;
+  if (btn) btn.disabled = true;
+  try {
+    await fetch('/api/presentations/' + id, {method: 'DELETE'});
+    // Remove card from DOM
+    var card = btn ? btn.closest('.pres-result-card') : null;
+    if (card) card.remove();
+    await loadProjects();
+    showToast('Presentation deleted', 'success');
+  } catch (e) {
+    showToast('Delete failed', 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Projects tab — load real presentations from API
+var projectsCache = [];
+async function loadProjects() {
+  try {
+    var res = await fetch('/api/presentations');
+    projectsCache = await res.json();
+  } catch (e) {
+    projectsCache = [];
+  }
+  if (state.historyFilter === 'projects') renderProjectList();
+}
+
+function renderProjectList() {
+  var list = document.getElementById('conversations-list');
+  if (!list) return;
+  if (!projectsCache.length) {
+    list.innerHTML = '<div class="empty-history"><div>No presentations yet.</div><button class="sample-prompt-btn" style="margin-top:8px" onclick="openSlideBuilder()">+ Create one</button></div>';
+    return;
+  }
+  list.innerHTML = projectsCache.map(function (p) {
+    var ago = p.created_at ? timeAgo(p.created_at) : '';
+    return '<div class="project-card">' +
+      '<span class="project-card-icon">&#x1F4CA;</span>' +
+      '<div class="project-card-info">' +
+        '<div class="project-card-title">' + escapeHtml(p.title || p.topic) + '</div>' +
+        '<div class="project-card-meta">' + escapeHtml(p.template) + ' &middot; ' + p.slide_count + ' slides &middot; ' + ago + '</div>' +
+      '</div>' +
+      '<div class="project-card-actions">' +
+        '<button class="proj-action-btn" title="Preview" onclick="openSlidesPreview(' + p.id + ', \'' + escapeHtml(JSON.stringify(p.slides || [])).replace(/'/g, "\\'") + '\')"><i data-lucide="eye"></i></button>' +
+        '<a href="/api/presentations/' + p.id + '/pptx" class="proj-action-btn" title="Download" download><i data-lucide="download"></i></a>' +
+        '<button class="proj-action-btn danger" title="Delete" onclick="deletePresentationFromList(' + p.id + ')"><i data-lucide="trash-2"></i></button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  refreshIcons();
+}
+
+async function deletePresentationFromList(id) {
+  if (!confirm('Delete this presentation?')) return;
+  try {
+    await fetch('/api/presentations/' + id, {method: 'DELETE'});
+    await loadProjects();
+    showToast('Deleted', 'success');
+  } catch (e) {
+    showToast('Delete failed', 'error');
+  }
+}
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '';
+  var d = new Date(isoStr);
+  var diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
