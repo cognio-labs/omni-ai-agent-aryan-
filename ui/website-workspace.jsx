@@ -242,3 +242,5 @@ window.mountOmniWebsiteWorkspace = function mountOmniWebsiteWorkspace(target) {
   if (!node || node.dataset.mounted === 'true') return;
   node.dataset.mounted = 'true';
   createRoot(node).render(<WorkspaceApp />);
+};
+
