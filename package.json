@@ -10,6 +10,6 @@
     "esbuild": "^0.28.1"
   },
   "scripts": {
-    "build:website-workspace": "esbuild ui/website-workspace.jsx --bundle --format=iife --global-name=OmniWebsiteWorkspaceBundle --outfile=ui/website-workspace.bundle.js --loader:.js=jsx"
+    "build:website-workspace": "node_modules\\.bin\\esbuild ui/website-workspace.jsx --bundle --format=iife --global-name=OmniWebsiteWorkspaceBundle --outfile=ui/website-workspace.bundle.js --loader:.js=jsx --define:process.env.NODE_ENV='\"production\"'"
   }
 }
