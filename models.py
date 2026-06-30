@@ -108,6 +108,23 @@ class Presentation(Base):
     created_at      = Column(DateTime, default=datetime.utcnow)
 
 
+class WebsiteProject(Base):
+    __tablename__ = "website_projects"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    title            = Column(String(255), nullable=False)
+    prompt           = Column(Text, nullable=False)
+    files_json       = Column(Text, default="[]")   # JSON array of {path, content, language}
+    build_steps_json = Column(Text, default="[]")
+    summary          = Column(Text, default="")
+    status           = Column(String(30), default="generating")  # generating|completed|failed
+    conversation_id  = Column(
+        Integer, ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    created_at       = Column(DateTime, default=datetime.utcnow)
+
+
 class Integration(Base):
     __tablename__ = "integrations"
 

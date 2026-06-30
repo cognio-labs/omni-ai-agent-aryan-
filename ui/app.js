@@ -706,3 +706,139 @@ function showLimitExceededWarning(billing) {
 }
 
 
+/* ═══════════════════════════════════════════════════════
+   WEBSITE WORKSPACE
+   ═══════════════════════════════════════════════════════ */
+
+/**
+ * Detect if the user's message is a website-build request.
+ * Returns true for messages like "build a landing page", "create a SaaS website", etc.
+ */
+function isWebsiteBuildRequest(message) {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  const buildVerbs = /\b(build|create|make|generate|design|develop)\b/;
+  const webTargets = /\b(website|landing page|web app|homepage|portfolio|saas page|e-commerce|ecommerce|online store|blog site|dashboard|one-page site)\b/;
+  return (buildVerbs.test(lower) && webTargets.test(lower))
+    || /\b(build me a website|create a website|make a website|generate a website)\b/.test(lower);
+}
+
+/**
+ * Create a lightweight placeholder project object while real generation is in progress.
+ */
+function createMockWebsiteProject(prompt) {
+  return {
+    id: `mock-${Date.now()}`,
+    title: prompt.slice(0, 52) || 'My Website',
+    prompt: prompt,
+    summary: 'Generating your website…',
+    description: 'OmniClient is building your React website. Preview will appear shortly.',
+    files: [],
+    build_steps: [
+      { type: 'thought', text: 'Thought for ~15s: Planning the component architecture, visual system, and file structure.' },
+    ],
+  };
+}
+
+/**
+ * Switch the main area to the website workspace split view.
+ * Mounts the React WorkspaceApp component if not yet mounted, then sends it
+ * the project data and triggers real AI generation.
+ */
+function openWebsiteWorkspace(project) {
+  // Hide normal chat surfaces
+  $('welcome-screen')?.classList.add('hidden');
+  $('messages-container')?.classList.add('hidden');
+  $('input-area')?.classList.add('hidden');
+
+  // Show workspace section
+  const ws = $('website-workspace');
+  if (!ws) return;
+  ws.classList.remove('hidden');
+
+  // Mount the React component into the root div (idempotent — won't double-mount)
+  const root = $('website-workspace-root');
+  if (root && typeof window.mountOmniWebsiteWorkspace === 'function') {
+    window.mountOmniWebsiteWorkspace(root);
+  }
+
+  // Send placeholder project data to the React component
+  if (project) {
+    window.dispatchEvent(new CustomEvent('omni:website-project', { detail: project }));
+  }
+
+  // Trigger real AI generation if this is a mock (placeholder) project
+  if (project && String(project.id).startsWith('mock-') && project.prompt) {
+    generateWebsite(project.prompt);
+  }
+}
+
+/**
+ * Exit the website workspace and return to normal chat view.
+ * Called by the "← Back" button inside the workspace React component.
+ */
+function exitWebsiteWorkspace() {
+  $('website-workspace')?.classList.add('hidden');
+  $('input-area')?.classList.remove('hidden');
+  $('welcome-screen')?.classList.remove('hidden');
+}
+
+/**
+ * Call the backend SSE endpoint to generate a website.
+ * Progressively forwards build_step events and the final complete project
+ * to the React workspace via CustomEvents.
+ */
+async function generateWebsite(prompt) {
+  try {
+    const res = await fetch('/api/website/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast('Website generation failed: ' + (err.detail || `HTTP ${res.status}`), 'error');
+      return;
+    }
+
+    if (!res.body) {
+      showToast('Streaming not supported in this browser', 'error');
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop() || '';
+
+      for (const eventText of events) {
+        const payload = parseSsePayload(eventText);
+        if (!payload) continue;
+
+        if (payload.type === 'build_step') {
+          // Forward build steps to the React workspace component
+          window.dispatchEvent(new CustomEvent('omni:website-step', { detail: payload.step }));
+        } else if (payload.type === 'complete' && payload.project) {
+          // Final project with all files — update the workspace
+          window.dispatchEvent(new CustomEvent('omni:website-project', { detail: payload.project }));
+          showToast('Website ready! 🚀', 'success');
+        } else if (payload.type === 'error') {
+          showToast('Generation warning: ' + (payload.message || 'Unknown error'), 'warning');
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      showToast('Website generation error: ' + err.message, 'error');
+    }
+  }
+}
+
+

@@ -136,17 +136,57 @@ function WorkspaceApp() {
   const [view, setView] = useState('preview');
   const [activeFile, setActiveFile] = useState(fallbackProject.files[0]?.path || 'src/App.jsx');
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [followupText, setFollowupText] = useState('');
+  const [hasNotification, setHasNotification] = useState(false);
 
   useEffect(() => {
     function handleUpdate(event) {
       const next = event.detail || fallbackProject;
-      setProject({ ...fallbackProject, ...next, files: next.files?.length ? next.files : fallbackProject.files });
-      setActiveFile((next.files?.[0] || fallbackProject.files[0]).path);
+      setProject((prev) => ({
+        ...fallbackProject,
+        ...next,
+        files: next.files?.length ? next.files : fallbackProject.files,
+        build_steps: next.build_steps?.length ? next.build_steps : prev.build_steps
+      }));
+      if (next.files?.length) {
+        setActiveFile(next.files[0].path);
+      }
       setView('preview');
+      setHasNotification(true);
     }
+
+    function handleStep(event) {
+      const step = event.detail;
+      setProject((prev) => {
+        const steps = prev.build_steps || [];
+        const exists = steps.some(
+          (s) => s.type === step.type && (s.text === step.text || s.command === step.command || s.file === step.file)
+        );
+        if (exists) return prev;
+        return {
+          ...prev,
+          build_steps: [...steps, step]
+        };
+      });
+      setHasNotification(true);
+    }
+
     window.addEventListener('omni:website-project', handleUpdate);
-    return () => window.removeEventListener('omni:website-project', handleUpdate);
+    window.addEventListener('omni:website-step', handleStep);
+    return () => {
+      window.removeEventListener('omni:website-project', handleUpdate);
+      window.removeEventListener('omni:website-step', handleStep);
+    };
   }, []);
+
+  // Run Prism syntax highlighting when file view opens or active file changes
+  useEffect(() => {
+    if (view === 'code' && window.Prism) {
+      setTimeout(() => {
+        window.Prism.highlightAll();
+      }, 50);
+    }
+  }, [view, activeFile, project]);
 
   const sandpackFiles = useMemo(() => toSandpackFiles(project.files || []), [project]);
   const currentFile = (project.files || []).find((file) => file.path === activeFile) || project.files?.[0];
@@ -165,15 +205,49 @@ function WorkspaceApp() {
     URL.revokeObjectURL(url);
   }
 
+  function handleSendFollowup() {
+    if (!followupText.trim()) return;
+    setProject((prev) => ({
+      ...prev,
+      prompt: followupText,
+      summary: 'Applying changes...',
+      description: `Updating site files according to: "${followupText}"`,
+      build_steps: [
+        { type: 'thought', text: `Thought: Working on updates for: "${followupText}"` }
+      ]
+    }));
+    setHasNotification(false);
+    if (typeof window.generateWebsite === 'function') {
+      window.generateWebsite(followupText);
+    }
+    setFollowupText('');
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      handleSendFollowup();
+    }
+  }
+
   return (
     <div className="wb-shell">
       <aside className="wb-chat-panel">
         <div className="wb-chat-top">
+          <button className="wb-back-btn" onClick={() => window.exitWebsiteWorkspace?.()} title="Go back to chat">
+            ← Back
+          </button>
           <div>
             <p>Website Builder</p>
             <h2>{project.title}</h2>
           </div>
-          <button className="wb-bell" type="button" aria-label="Notifications"><span /></button>
+          <button
+            className={`wb-bell ${hasNotification ? 'has-dot' : ''}`}
+            type="button"
+            aria-label="Notifications"
+            onClick={() => setHasNotification(false)}
+          >
+            <span />
+          </button>
         </div>
         <div className="wb-user-prompt">{project.prompt}</div>
         <article className="wb-result-card">
@@ -196,8 +270,13 @@ function WorkspaceApp() {
           </div>
         )}
         <div className="wb-followup">
-          <input placeholder="Ask a follow-up..." />
-          <button type="button">Send</button>
+          <input
+            placeholder="Ask a follow-up..."
+            value={followupText}
+            onChange={(e) => setFollowupText(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <button type="button" onClick={handleSendFollowup}>Send</button>
         </div>
       </aside>
 

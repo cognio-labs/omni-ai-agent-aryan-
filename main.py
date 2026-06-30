@@ -41,7 +41,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import get_db, init_db
-from models import Conversation, Message, Agent, Memory, Presentation, UserSubscription
+from models import Conversation, Message, Agent, Memory, Presentation, UserSubscription, WebsiteProject
 from memory import (
     get_memories,
     retrieve_relevant_memories,
@@ -221,6 +221,11 @@ class GeneratePresentationRequest(BaseModel):
 
 class SlideNotesRequest(BaseModel):
     notes: str
+
+
+class GenerateWebsiteRequest(BaseModel):
+    prompt: str
+    conversation_id: Optional[int] = None
 
 
 class BillingCheckoutRequest(BaseModel):
@@ -1212,6 +1217,96 @@ def export_conversation(conv_id: int, fmt: str = "markdown", db: Session = Depen
         content=md,
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="conversation_{conv_id}.md"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Website Builder
+# ---------------------------------------------------------------------------
+
+@app.post("/api/website/generate")
+@limiter.limit("3/minute")
+async def generate_website_endpoint(
+    request: Request,
+    body: GenerateWebsiteRequest,
+    db: Session = Depends(get_db),
+):
+    """Generate a React website via AI. Returns SSE stream of build_step + complete events."""
+    from generate_website import generate_website_stream
+
+    prompt = _sanitize(body.prompt)
+    if not prompt:
+        raise HTTPException(400, "prompt cannot be empty.")
+
+    conversation_id = body.conversation_id
+    if not conversation_id:
+        conv = Conversation(title=f"Website: {prompt[:60]}")
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+        conversation_id = conv.id
+    else:
+        conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if not conv:
+            raise HTTPException(404, f"Conversation {conversation_id} not found.")
+
+    def generate_sse():
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conversation_id})}\n\n"
+        for event_json in generate_website_stream(prompt, conversation_id, db):
+            yield f"data: {event_json}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/website/projects")
+def list_website_projects(db: Session = Depends(get_db)):
+    """Return all website projects ordered newest first."""
+    projects = (
+        db.query(WebsiteProject)
+        .order_by(WebsiteProject.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": p.id,
+            "title": p.title,
+            "prompt": p.prompt,
+            "summary": p.summary,
+            "status": p.status,
+            "conversation_id": p.conversation_id,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in projects
+    ]
+
+
+@app.get("/api/website/{project_id}/download")
+def download_website_zip(project_id: int, db: Session = Depends(get_db)):
+    """Bundle all project files into a ZIP archive and return for download."""
+    from generate_website import create_zip
+    import io
+
+    p = db.query(WebsiteProject).filter(WebsiteProject.id == project_id).first()
+    if not p:
+        raise HTTPException(404, "Website project not found.")
+    try:
+        files = json.loads(p.files_json or "[]")
+    except Exception:
+        files = []
+
+    zip_buf = create_zip(project_id, files)
+    safe_title = re.sub(r"[^\w\-]", "_", p.title or "website")[:40]
+    filename = f"omniclient_{safe_title}_{project_id}.zip"
+
+    return Response(
+        content=zip_buf.read(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

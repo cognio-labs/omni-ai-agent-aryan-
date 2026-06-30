@@ -501,9 +501,12 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .wb-chat-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #edf0f5; }
 .wb-chat-top p { margin: 0 0 4px; color: #687386; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .wb-chat-top h2 { margin: 0; color: #111827; font-size: 16px; line-height: 1.25; }
-.wb-bell { position: relative; width: 36px; height: 36px; border: 1px solid #dfe4ec; border-radius: 50%; background: #fff; }
+.wb-bell { position: relative; width: 36px; height: 36px; border: 1px solid #dfe4ec; border-radius: 50%; background: #fff; cursor: pointer; }
 .wb-bell::before { content: ''; position: absolute; inset: 9px 11px 8px; border: 2px solid #526173; border-top-left-radius: 12px; border-top-right-radius: 12px; border-bottom: 0; }
-.wb-bell span { position: absolute; right: 7px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 2px #fff; }
+.wb-bell span { display: none; position: absolute; right: 7px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 2px #fff; }
+.wb-bell.has-dot span { display: block; }
+.wb-back-btn { background: transparent; border: 1px solid #dfe4ec; border-radius: 10px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: #526173; cursor: pointer; transition: all 0.15s ease; align-self: flex-start; }
+.wb-back-btn:hover { background: #f2f5f9; color: #111827; border-color: #cbd5e1; }
 .wb-user-prompt { padding: 12px; border-radius: 12px; background: #f2f5f9; color: #293449; font-size: 13px; line-height: 1.45; }
 .wb-result-card { padding: 14px; border: 1px solid #dfe4ec; border-radius: 14px; background: #fff; box-shadow: 0 12px 30px rgba(16, 24, 40, .06); }
 .wb-result-card span { color: #2563eb; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
