@@ -1,5 +1,14 @@
 {
   "dependencies": {
-    "geist": "^1.7.2"
+    "@codesandbox/sandpack-react": "^2.20.0",
+    "geist": "^1.7.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "scripts": {
+    "build:website-workspace": "esbuild ui/website-workspace.jsx --bundle --format=iife --global-name=OmniWebsiteWorkspaceBundle --outfile=ui/website-workspace.bundle.js --loader:.js=jsx"
   }
 }
