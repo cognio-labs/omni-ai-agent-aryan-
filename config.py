@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     google_client_secret: str = Field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""), description="Google OAuth Client Secret")
     google_redirect_uri: str = Field(default_factory=lambda: os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8001/api/integrations/gmail/callback"), description="Google OAuth Redirect URI")
 
+    # Stripe Payment Integration
+    stripe_api_key: str = Field(default_factory=lambda: os.getenv("STRIPE_API_KEY", ""), description="Stripe API Secret Key")
+    stripe_webhook_secret: str = Field(default_factory=lambda: os.getenv("STRIPE_WEBHOOK_SECRET", ""), description="Stripe Webhook Signing Secret")
+    stripe_price_id_pro: str = Field(default_factory=lambda: os.getenv("STRIPE_PRICE_ID_PRO", ""), description="Stripe Price ID for Pro Plan")
+    stripe_price_id_enterprise: str = Field(default_factory=lambda: os.getenv("STRIPE_PRICE_ID_ENTERPRISE", ""), description="Stripe Price ID for Enterprise Plan")
+    free_tier_message_limit: int = Field(default_factory=lambda: int(os.getenv("FREE_TIER_MESSAGE_LIMIT", "20")))
+
+
 
     # Application
     app_name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "OmniClient AI"))
@@ -71,6 +79,8 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
 
 
 

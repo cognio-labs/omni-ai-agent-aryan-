@@ -24,9 +24,14 @@ from pathlib import Path
 from typing import Optional
 
 import uvicorn
+import httpx
+try:
+    import stripe
+except ImportError:
+    stripe = None
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -36,7 +41,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import get_db, init_db
-from models import Conversation, Message, Agent, Memory, Presentation
+from models import Conversation, Message, Agent, Memory, Presentation, UserSubscription
 from memory import (
     get_memories,
     retrieve_relevant_memories,
@@ -149,6 +154,10 @@ def on_startup():
                 slideforge.enable_code_gen = True
                 slideforge.config_json = slideforge_config
                 db.commit()
+        subscription = db.query(UserSubscription).filter(UserSubscription.user_key == "default").first()
+        if not subscription:
+            db.add(UserSubscription(user_key="default", plan="Free", status="active"))
+            db.commit()
     finally:
         db.close()
 
@@ -214,6 +223,10 @@ class SlideNotesRequest(BaseModel):
     notes: str
 
 
+class BillingCheckoutRequest(BaseModel):
+    plan: str = "pro"
+
+
 
 # ---------------------------------------------------------------------------
 # Root - serve UI
@@ -228,6 +241,54 @@ async def serve_ui():
 
 
 # ---------------------------------------------------------------------------
+# Billing helpers
+# ---------------------------------------------------------------------------
+
+def _get_subscription(db: Session) -> UserSubscription:
+    subscription = db.query(UserSubscription).filter(UserSubscription.user_key == "default").first()
+    if not subscription:
+        subscription = UserSubscription(user_key="default", plan="Free", status="active")
+        db.add(subscription)
+        db.commit()
+        db.refresh(subscription)
+    return subscription
+
+
+def _billing_status_payload(subscription: UserSubscription) -> dict:
+    limit = settings.free_tier_message_limit
+    is_free = (subscription.plan or "Free").lower() == "free" or subscription.status not in {"active", "trialing"}
+    return {
+        "plan": subscription.plan or "Free",
+        "status": subscription.status or "active",
+        "message_count": subscription.monthly_message_count or 0,
+        "message_limit": limit if is_free else None,
+        "limit_reached": is_free and (subscription.monthly_message_count or 0) >= limit,
+        "stripe_customer_id": subscription.stripe_customer_id or "",
+        "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+    }
+
+
+def _enforce_free_tier_limit(db: Session) -> None:
+    subscription = _get_subscription(db)
+    status = _billing_status_payload(subscription)
+    if status["limit_reached"]:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "message": "Free plan limit reached. Upgrade to continue chatting.",
+                "billing": status,
+            },
+        )
+
+
+def _increment_free_tier_usage(db: Session) -> None:
+    subscription = _get_subscription(db)
+    is_free = (subscription.plan or "Free").lower() == "free" or subscription.status not in {"active", "trialing"}
+    if is_free:
+        subscription.monthly_message_count = (subscription.monthly_message_count or 0) + 1
+        db.commit()
+
+# ---------------------------------------------------------------------------
 # Chat endpoint (SSE streaming)
 # ---------------------------------------------------------------------------
 
@@ -240,6 +301,7 @@ async def chat_endpoint(request: Request, body: ChatRequest, db: Session = Depen
     user_message = _sanitize(body.message)
     if not user_message.strip():
         raise HTTPException(400, "Message cannot be empty.")
+    _enforce_free_tier_limit(db)
 
     # Get or create conversation
     conversation_id = body.conversation_id
@@ -265,6 +327,7 @@ async def chat_endpoint(request: Request, body: ChatRequest, db: Session = Depen
         for chunk in chat_stream(user_message, conversation_id, db, agent):
             payload = json.dumps({"type": "token", "content": chunk})
             yield f"data: {payload}\n\n"
+        _increment_free_tier_usage(db)
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(
@@ -276,10 +339,18 @@ async def chat_endpoint(request: Request, body: ChatRequest, db: Session = Depen
         },
     )
  
+
+@app.post("/api/chat/stream")
+@limiter.limit("10/minute")
+async def chat_stream_endpoint(request: Request, body: ChatRequest, db: Session = Depends(get_db)):
+    return await chat_endpoint(request, body, db)
+
+
 @app.post("/chat")
 @limiter.limit("10/minute")
 async def legacy_chat_endpoint(request: Request, body: ChatRequest, db: Session = Depends(get_db)):
     return await chat_endpoint(request, body, db)
+
 
 # ---------------------------------------------------------------------------
 # Conversations
@@ -883,7 +954,208 @@ def delete_presentation(pres_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted", "id": pres_id}
 
 
+# ---------------------------------------------------------------------------
+# Billing
+# ---------------------------------------------------------------------------
+
+@app.get("/api/billing/status")
+def billing_status(db: Session = Depends(get_db)):
+    return _billing_status_payload(_get_subscription(db))
+
+
+@app.post("/api/billing/create-checkout-session")
+async def create_checkout_session(request: Request, body: BillingCheckoutRequest, db: Session = Depends(get_db)):
+    if stripe is None:
+        raise HTTPException(500, "Stripe package is not installed.")
+    if not settings.stripe_api_key:
+        raise HTTPException(400, "Stripe API key is not configured.")
+
+    plan = (body.plan or "pro").lower()
+    price_id = settings.stripe_price_id_enterprise if plan == "enterprise" else settings.stripe_price_id_pro
+    if not price_id:
+        raise HTTPException(400, f"Stripe price ID for {plan} is not configured.")
+
+    stripe.api_key = settings.stripe_api_key
+    subscription = _get_subscription(db)
+    base_url = str(request.base_url).rstrip("/")
+    session_args = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": f"{base_url}/?billing=success",
+        "cancel_url": f"{base_url}/?billing=cancelled",
+        "client_reference_id": "default",
+        "metadata": {"user_key": "default", "plan": plan.title()},
+    }
+    if subscription.stripe_customer_id:
+        session_args["customer"] = subscription.stripe_customer_id
+
+    checkout_session = stripe.checkout.Session.create(**session_args)
+    return {"checkout_url": checkout_session.url, "session_id": checkout_session.id}
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    if stripe is None:
+        raise HTTPException(500, "Stripe package is not installed.")
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    try:
+        if settings.stripe_webhook_secret:
+            event = stripe.Webhook.construct_event(payload, sig_header, settings.stripe_webhook_secret)
+        else:
+            event = json.loads(payload.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid Stripe webhook: {exc}")
+
+    event_type = event.get("type")
+    data = event.get("data", {}).get("object", {})
+    subscription = _get_subscription(db)
+
+    if event_type == "checkout.session.completed":
+        metadata = data.get("metadata") or {}
+        subscription.plan = metadata.get("plan") or "Pro"
+        subscription.status = "active"
+        subscription.stripe_customer_id = data.get("customer") or subscription.stripe_customer_id
+        subscription.stripe_subscription_id = data.get("subscription") or subscription.stripe_subscription_id
+        subscription.monthly_message_count = 0
+        db.commit()
+    elif event_type in {"customer.subscription.updated", "customer.subscription.created"}:
+        subscription.status = data.get("status") or subscription.status
+        subscription.stripe_subscription_id = data.get("id") or subscription.stripe_subscription_id
+        subscription.stripe_customer_id = data.get("customer") or subscription.stripe_customer_id
+        if data.get("current_period_end"):
+            subscription.current_period_end = datetime.utcfromtimestamp(data["current_period_end"])
+        if subscription.status in {"active", "trialing"} and (subscription.plan or "Free") == "Free":
+            subscription.plan = "Pro"
+        db.commit()
+    elif event_type == "customer.subscription.deleted":
+        subscription.plan = "Free"
+        subscription.status = "canceled"
+        subscription.stripe_subscription_id = ""
+        db.commit()
+
+    return {"received": True}
+
+# ---------------------------------------------------------------------------
+# Integrations (OAuth)
+# ---------------------------------------------------------------------------
+import base64
+import urllib.parse
+from models import Integration
+
+def encrypt_tokens(tokens_dict: dict, secret: str) -> str:
+    serialized = json.dumps(tokens_dict)
+    secret_bytes = secret.encode()
+    sb_len = len(secret_bytes)
+    if sb_len == 0:
+        return base64.b64encode(serialized.encode()).decode()
+    encrypted = bytes(c ^ secret_bytes[i % sb_len] for i, c in enumerate(serialized.encode()))
+    return base64.b64encode(encrypted).decode()
+
+@app.get("/api/integrations/status")
+def get_integrations_status(db: Session = Depends(get_db)):
+    """Return connected status for all OAuth integrations."""
+    rows = db.query(Integration).all()
+    connected = {r.provider: True for r in rows}
+    return {
+        "gmail": connected.get("gmail", False),
+        "slack": connected.get("slack", False),
+        "n8n": connected.get("n8n", False),
+        "whatsapp": connected.get("whatsapp", False),
+    }
+
+@app.get("/api/integrations/gmail/connect")
+def connect_gmail_oauth():
+    """Redirect to Google OAuth consent page."""
+    if not settings.google_client_id:
+        raise HTTPException(400, "Google Client ID is not configured in settings/env.")
+    
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": "omniclient_gmail_oauth",
+    }
+    encoded = urllib.parse.urlencode(params)
+    url = f"https://accounts.google.com/o/oauth2/v2/auth?{encoded}"
+    return RedirectResponse(url)
+
+@app.get("/api/integrations/gmail/callback")
+async def connect_gmail_callback(code: str, state: Optional[str] = None, db: Session = Depends(get_db)):
+    """Handle code redirect, exchange for tokens, encrypt, and save to DB."""
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(400, "Google OAuth credentials not configured.")
+        
+    payload = {
+        "code": code,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "redirect_uri": settings.google_redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    
+    async with httpx.AsyncClient() as client:
+        res = await client.post("https://oauth2.googleapis.com/token", data=payload)
+        if not res.is_success:
+            err_msg = res.json().get("error_description", "Token exchange failed.")
+            return HTMLResponse(content=f"""
+                <html>
+                <body style="font-family:sans-serif; text-align:center; padding-top:40px; background:#0f172a; color:#f44747;">
+                    <h2>OAuth Connection Failed</h2>
+                    <p>{err_msg}</p>
+                    <script>
+                        if (window.opener) {{
+                            window.opener.postMessage({{type: "integration_failure", provider: "gmail", error: "{err_msg}"}}, "*");
+                        }}
+                        setTimeout(function() {{ window.close(); }}, 3000);
+                    </script>
+                </body>
+                </html>
+            """)
+        tokens = res.json()
+        
+    secret = settings.openrouter_api_key or "omniclient_default_secret_key"
+    enc = encrypt_tokens(tokens, secret)
+    
+    db.query(Integration).filter(Integration.provider == "gmail").delete()
+    
+    new_integration = Integration(
+        provider="gmail",
+        tokens_json=enc,
+    )
+    db.add(new_integration)
+    db.commit()
+    
+    return HTMLResponse(content="""
+        <html>
+        <body style="font-family:sans-serif; text-align:center; padding-top:40px; background:#0f172a; color:#f8fafc;">
+            <h2>Connection Successful!</h2>
+            <p>Gmail has been linked to OmniClient.</p>
+            <p>Closing window...</p>
+            <script>
+                if (window.opener) {
+                    window.opener.postMessage({type: "integration_success", provider: "gmail"}, "*");
+                }
+                setTimeout(function() { window.close(); }, 1200);
+            </script>
+        </body>
+        </html>
+    """)
+
+@app.delete("/api/integrations/{provider}/disconnect")
+def disconnect_integration(provider: str, db: Session = Depends(get_db)):
+    """Delete connected integration token."""
+    deleted = db.query(Integration).filter(Integration.provider == provider).delete()
+    db.commit()
+    return {"status": "disconnected", "provider": provider, "deleted": bool(deleted)}
+
+
 @app.get("/slides-preview", response_class=HTMLResponse)
+
 def slides_preview():
     """Serve slides.html - JS reads ?data= URL param for dynamic content."""
     slides_path = Path(__file__).parent / "slides.html"
@@ -987,6 +1259,12 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level="info",
     )
+
+
+
+
+
+
 
 
 

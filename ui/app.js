@@ -4,9 +4,9 @@ const $=(id)=>document.getElementById(id);
 const agentModes=['General','Developer','Designer','Marketing','Research','Finance','SEO','Automation','Support','Legal','HR'];
 const longPromptThreshold=1800,longLineThreshold=28;
 window.addEventListener('DOMContentLoaded',init);
-async function init(){applyTheme(state.theme);configureMarkdown();await loadAgents();await loadConversations();renderAgentMenu();setupEventListeners();initActionPills();setSidebar(state.sidebarOpen);showWelcomeScreen();await loadProjects();refreshIcons();}
+async function init(){applyTheme(state.theme);configureMarkdown();await loadAgents();await loadConversations();renderAgentMenu();setupEventListeners();initActionPills();setSidebar(state.sidebarOpen);showWelcomeScreen();await loadProjects();await loadBillingStatus();refreshIcons();}
 function setupEventListeners(){
-$('sidebar-toggle')?.addEventListener('click',()=>setSidebar(false));$('mobile-sidebar-toggle')?.addEventListener('click',()=>setSidebar(true));$('new-chat-btn')?.addEventListener('click',()=>startNewChat());$('open-command-btn')?.addEventListener('click',openCommandPalette);$('settings-btn')?.addEventListener('click',()=>openModal('settings-modal'));$('settings-theme-toggle')?.addEventListener('click',toggleTheme);$('more-btn')?.addEventListener('click',toggleMoreMenu);$('send-btn')?.addEventListener('click',()=>state.isStreaming?cancelStreaming():sendMessage());$('message-input')?.addEventListener('keydown',handleComposerKeydown);$('message-input')?.addEventListener('input',handleComposerInput);$('file-upload-btn')?.addEventListener('click',()=>$('file-input')?.click());$('file-input')?.addEventListener('change',handleFileSelection);$('voice-btn')?.addEventListener('click',toggleVoiceInput);$('agent-select-btn')?.addEventListener('click',toggleAgentMenu);$('command-input')?.addEventListener('input',renderCommandResults);$('sandbox-toggle')?.addEventListener('click',()=>$('sandbox-panel')?.classList.toggle('collapsed'));$('close-settings-btn')?.addEventListener('click',()=>closeModal('settings-modal'));$('close-db-modal-btn')?.addEventListener('click',()=>closeModal('db-modal'));$('db-shortcut-btn')?.addEventListener('click',()=>{closeModal('settings-modal');openModal('db-modal');});$('run-query-btn')?.addEventListener('click',runDbQuery);$('export-csv-btn')?.addEventListener('click',exportQueryCSV);
+$('sidebar-toggle')?.addEventListener('click',()=>setSidebar(false));$('mobile-sidebar-toggle')?.addEventListener('click',()=>setSidebar(true));$('new-chat-btn')?.addEventListener('click',()=>startNewChat());$('open-command-btn')?.addEventListener('click',openCommandPalette);$('settings-btn')?.addEventListener('click',()=>openModal('settings-modal'));$('billing-badge')?.addEventListener('click',openBillingSettings);$('settings-theme-toggle')?.addEventListener('click',toggleTheme);$('more-btn')?.addEventListener('click',toggleMoreMenu);$('send-btn')?.addEventListener('click',()=>state.isStreaming?cancelStreaming():sendMessage());$('message-input')?.addEventListener('keydown',handleComposerKeydown);$('message-input')?.addEventListener('input',handleComposerInput);$('file-upload-btn')?.addEventListener('click',()=>$('file-input')?.click());$('file-input')?.addEventListener('change',handleFileSelection);$('voice-btn')?.addEventListener('click',toggleVoiceInput);$('agent-select-btn')?.addEventListener('click',toggleAgentMenu);$('command-input')?.addEventListener('input',renderCommandResults);$('sandbox-toggle')?.addEventListener('click',()=>$('sandbox-panel')?.classList.toggle('collapsed'));$('close-settings-btn')?.addEventListener('click',()=>closeModal('settings-modal'));$('close-db-modal-btn')?.addEventListener('click',()=>closeModal('db-modal'));$('db-shortcut-btn')?.addEventListener('click',()=>{closeModal('settings-modal');openModal('db-modal');});$('run-query-btn')?.addEventListener('click',runDbQuery);$('export-csv-btn')?.addEventListener('click',exportQueryCSV);
 document.querySelectorAll('.history-tab').forEach((tab)=>tab.addEventListener('click',()=>setHistoryFilter(tab.dataset.filter)));document.querySelectorAll('.suggestions button').forEach((btn)=>btn.addEventListener('click',()=>startNewChat(null,btn.dataset.prompt||'')));document.querySelectorAll('.settings-tab').forEach((tab)=>tab.addEventListener('click',()=>activateSettingsTab(tab.dataset.tab)));$('more-menu')?.querySelectorAll('button').forEach((btn)=>btn.addEventListener('click',()=>handleMoreAction(btn.dataset.action)));document.addEventListener('keydown',handleGlobalKeys);document.addEventListener('click',handleDocumentClick);setupDropZone();}
 function refreshIcons(){if(window.lucide)lucide.createIcons();}
 function configureMarkdown(){if(window.marked)marked.setOptions({gfm:true,breaks:true,mangle:false,headerIds:false});}
@@ -32,7 +32,7 @@ function handleComposerInput(){autoResizeTextarea();maybeVirtualizePrompt();}
 function maybeVirtualizePrompt(){const input=$('message-input');if(!input)return;const value=input.value;const lineCount=value.split('\n').length;if(value.length<longPromptThreshold&&lineCount<longLineThreshold)return;const virtualFile=createVirtualFile(value);state.virtualFiles.push(virtualFile);input.value='';autoResizeTextarea();renderFilePreview();showToast(`${virtualFile.name} attached as context`,'success');}
 function createVirtualFile(content){const kind=detectVirtualFileKind(content);const index=state.virtualFiles.length+1;return{id:`virtual-${Date.now()}-${index}`,name:`${kind.base}-${index}.${kind.ext}`,size:new Blob([content]).size,type:kind.type,virtual:true,content};}
 function detectVirtualFileKind(text){const trimmed=text.trim();if(/^\s*[{[]/.test(trimmed))return{base:'data',ext:'json',type:'JSON'};if(/^---\n|:\s*\n\s+-\s/.test(trimmed))return{base:'config',ext:'yaml',type:'YAML'};if(/^#\s|```|^\|.+\|/m.test(trimmed))return{base:'notes',ext:'md',type:'Markdown'};if(/Traceback|ERROR|WARN|INFO|\[[0-9: -]+\]/i.test(trimmed))return{base:'server',ext:'log',type:'Log'};if(/def\s+\w+\(|import\s+\w+|from\s+\w+\s+import/.test(trimmed))return{base:'script',ext:'py',type:'Python'};if(/const\s+\w+|function\s+\w+|=>|import .* from/.test(trimmed))return{base:'app',ext:'js',type:'JavaScript'};if(/,/.test(trimmed.split('\n')[0]||'')&&trimmed.split('\n').length>4)return{base:'table',ext:'csv',type:'CSV'};return{base:'document',ext:'txt',type:'Text'};}
-async function sendMessage(){const input=$('message-input');const typedMessage=input.value.trim();if(!typedMessage&&!state.virtualFiles.length&&!state.pendingFiles.length)return;if(state.isStreaming)return;const payloadMessage=buildPayloadMessage(typedMessage);const displayMessage=typedMessage||`Attached ${state.virtualFiles.length+state.pendingFiles.length} file${state.virtualFiles.length+state.pendingFiles.length===1?'':'s'}.`;input.value='';autoResizeTextarea();$('welcome-screen').classList.add('hidden');$('messages-container').classList.remove('hidden');appendMessage('user',displayMessage,null,false,false,[...state.virtualFiles,...state.pendingFiles]);setStreamingUi(true);startSandboxTask(inferTaskName(payloadMessage));const skeletonId=showSkeleton();state.abortController=new AbortController();let assistantEl=null;let rawContent='';try{const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},signal:state.abortController.signal,body:JSON.stringify({message:payloadMessage,conversation_id:state.currentConversationId,agent_id:state.currentAgentId})});removeElement(skeletonId);if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.detail||`HTTP ${res.status}`);}if(!res.body)throw new Error('Streaming is not available in this browser.');assistantEl=appendMessage('assistant','',null,false,true);const contentEl=assistantEl.querySelector('.message-content');const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';while(true){const{done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split('\n\n');buffer=events.pop()||'';for(const eventText of events){const payload=parseSsePayload(eventText);if(!payload)continue;if(payload.type==='meta')state.currentConversationId=payload.conversation_id;if(payload.type==='text'||payload.type==='token'){rawContent+=cleanDisplayContent(payload.content||'');renderMessageContent(contentEl,rawContent);scrollToBottom();}else if(payload.type==='progress'){renderStreamProgress(payload);}}}if(!rawContent.trim()){assistantEl?.remove();appendMessage('assistant','**No response returned.** Please check the active model and API configuration.');}else{assistantEl.classList.remove('streaming');assistantEl.querySelector('.thinking-badge')?.remove();assistantEl.querySelector('.stream-cursor')?.remove();await enhanceMarkdown(assistantEl);}completeSandboxTask('Completed');await loadConversations();}catch(error){removeElement(skeletonId);if(assistantEl&&!rawContent.trim())assistantEl.remove();const msg=error.name==='AbortError'?'Generation cancelled.':`**Connection error:** ${error.message}`;appendMessage('assistant',msg);completeSandboxTask(error.name==='AbortError'?'Cancelled':'Needs attention',true);showToast(error.name==='AbortError'?'Generation cancelled':error.message,error.name==='AbortError'?'warning':'error');}finally{setStreamingUi(false);state.abortController=null;state.virtualFiles=[];state.pendingFiles=[];renderFilePreview();scrollToBottom();}}
+async function sendMessage(){const input=$('message-input');const typedMessage=input.value.trim();if(!typedMessage&&!state.virtualFiles.length&&!state.pendingFiles.length)return;if(state.isStreaming)return;const payloadMessage=buildPayloadMessage(typedMessage);const displayMessage=typedMessage||`Attached ${state.virtualFiles.length+state.pendingFiles.length} file${state.virtualFiles.length+state.pendingFiles.length===1?'':'s'}.`;input.value='';autoResizeTextarea();$('welcome-screen').classList.add('hidden');$('messages-container').classList.remove('hidden');appendMessage('user',displayMessage,null,false,false,[...state.virtualFiles,...state.pendingFiles]);setStreamingUi(true);startSandboxTask(inferTaskName(payloadMessage));const skeletonId=showSkeleton();state.abortController=new AbortController();let assistantEl=null;let rawContent='';try{const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},signal:state.abortController.signal,body:JSON.stringify({message:payloadMessage,conversation_id:state.currentConversationId,agent_id:state.currentAgentId})});removeElement(skeletonId);if(!res.ok){const err=await res.json().catch(()=>({}));if(res.status===402){showLimitExceededWarning(err.detail?.billing);await loadBillingStatus();throw new Error(err.detail?.message||'Free plan limit reached.');}throw new Error(typeof err.detail==='string'?err.detail:(err.detail?.message||`HTTP ${res.status}`));}if(!res.body)throw new Error('Streaming is not available in this browser.');assistantEl=appendMessage('assistant','',null,false,true);const contentEl=assistantEl.querySelector('.message-content');const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';while(true){const{done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split('\n\n');buffer=events.pop()||'';for(const eventText of events){const payload=parseSsePayload(eventText);if(!payload)continue;if(payload.type==='meta')state.currentConversationId=payload.conversation_id;if(payload.type==='text'||payload.type==='token'){rawContent+=cleanDisplayContent(payload.content||'');renderMessageContent(contentEl,rawContent);scrollToBottom();}else if(payload.type==='progress'){renderStreamProgress(payload);}}}if(!rawContent.trim()){assistantEl?.remove();appendMessage('assistant','**No response returned.** Please check the active model and API configuration.');}else{assistantEl.classList.remove('streaming');assistantEl.querySelector('.thinking-badge')?.remove();assistantEl.querySelector('.stream-cursor')?.remove();await enhanceMarkdown(assistantEl);}completeSandboxTask('Completed');await loadConversations();}catch(error){removeElement(skeletonId);if(assistantEl&&!rawContent.trim())assistantEl.remove();const msg=error.name==='AbortError'?'Generation cancelled.':`**Connection error:** ${error.message}`;appendMessage('assistant',msg);completeSandboxTask(error.name==='AbortError'?'Cancelled':'Needs attention',true);showToast(error.name==='AbortError'?'Generation cancelled':error.message,error.name==='AbortError'?'warning':'error');}finally{setStreamingUi(false);state.abortController=null;state.virtualFiles=[];state.pendingFiles=[];renderFilePreview();scrollToBottom();}}
 function buildPayloadMessage(message){const modeInstruction=`[Agent mode: ${state.currentMode}]\nAll code execution, browser automation, document conversion, and generation tasks must be planned for the E2B Sandbox. The browser UI is progress-only.\n`;const virtualContext=state.virtualFiles.map((file)=>`\n\n[Virtual attachment: ${file.name} | ${file.type} | ${formatFileSize(file.size)}]\n${file.content}`).join('');const fileContext=state.pendingFiles.map((file)=>`\n\n[Attached file reference: ${file.name} | ${file.type||'unknown'} | ${formatFileSize(file.size)}]`).join('');return`${modeInstruction}\n${message||'Use the attached context.'}${virtualContext}${fileContext}`;}
 function inferTaskName(message){if(/deploy/i.test(message))return'Deploying';if(/website|landing|dashboard|app|ui/i.test(message))return'Building Workspace';if(/pdf|docx|presentation|pptx|slides/i.test(message))return'Generating Document';if(/research|source|analy/i.test(message))return'Researching';if(/api|code|python|node|debug/i.test(message))return'Running Sandbox';return'Thinking';}
 function renderStreamProgress(payload){const label=payload.step||payload.phase||payload.status||'Working';const panel=$('sandbox-panel');if(panel){$('sandbox-summary-text').textContent=String(label).replace(/[-_]/g,' ')+'...';panel.classList.remove('idle');}}function parseSsePayload(eventText){const data=eventText.split('\n').filter((line)=>line.startsWith('data:')).map((line)=>line.slice(5).trim()).join('\n');if(!data||data==='[DONE]')return null;try{return JSON.parse(data);}catch{return null;}}
@@ -70,7 +70,7 @@ function exportQueryCSV(){if(!lastQueryResults)return;const{columns,rows}=lastQu
 function startSandboxTask(title){const task={id:`task-${Date.now()}`,title,status:'Running',progress:8};state.tasks=[task];renderTasks();if(state.taskTimer)clearInterval(state.taskTimer);state.taskTimer=setInterval(()=>{const active=state.tasks[0];if(!active||active.progress>=92||!state.isStreaming)return;active.progress=Math.min(92,active.progress+Math.random()*12);renderTasks();},650);}
 function completeSandboxTask(status,error=false){if(state.taskTimer)clearInterval(state.taskTimer);const active=state.tasks[0];if(!active)return;active.status=status;active.progress=error?active.progress:100;renderTasks();setTimeout(()=>{state.tasks=[];renderTasks();},error?4500:1800);}
 function renderTasks(){const panel=$('sandbox-panel');const list=$('task-list');if(!panel||!list)return;panel.classList.toggle('idle',!state.tasks.length);const active=state.tasks[0];$('sandbox-summary-text').textContent=active?`${active.title}...`:'Sandbox idle';list.innerHTML=state.tasks.map((task)=>`<div class="task-card"><div class="task-title"><span>${escapeHtml(task.title)}</span><span>${escapeHtml(task.status)}</span></div><div class="task-progress" style="--progress: ${Math.round(task.progress)}%"><span></span></div><div class="task-actions"><button type="button" data-action="cancel">Cancel</button><button type="button" data-action="retry">Retry</button><button type="button" data-action="logs">Logs</button></div></div>`).join('');list.querySelectorAll('button').forEach((btn)=>btn.addEventListener('click',()=>showToast(`${btn.dataset.action} is handled by the sandbox task manager.`,'info')));refreshIcons();}
-function handleGlobalKeys(e){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();}if(e.key==='Escape'){closeCommandPalette();$('agent-menu')?.classList.remove('open');$('more-menu')?.classList.remove('open');document.querySelectorAll('.modal-overlay.open').forEach((el)=>el.classList.remove('open'));}if(!e.ctrlKey&&!e.metaKey&&e.key.toLowerCase()==='n'&&document.activeElement===document.body)startNewChat();}
+function handleGlobalKeys(e){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openCommandPalette();}if(e.key==='Escape'){closeCommandPalette();closeSFModal();$('agent-menu')?.classList.remove('open');$('more-menu')?.classList.remove('open');document.querySelectorAll('.modal-overlay.open').forEach((el)=>el.classList.remove('open'));}if(!e.ctrlKey&&!e.metaKey&&e.key.toLowerCase()==='n'&&document.activeElement===document.body)startNewChat();}
 function handleDocumentClick(e){if(e.target.classList.contains('overlay'))closeCommandPalette();if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('open');if(!e.target.closest('.agent-menu-wrap'))$('agent-menu')?.classList.remove('open');if(!e.target.closest('#more-btn')&&!e.target.closest('#more-menu'))$('more-menu')?.classList.remove('open');}
 function showToast(message,type='info'){const toast=document.createElement('div');toast.className=`toast ${type}`;toast.innerHTML=`<i data-lucide="${type==='success'?'check-circle-2':type==='error'?'circle-alert':type==='warning'?'triangle-alert':'info'}"></i><span>${escapeHtml(message)}</span>`;$('toast-container').appendChild(toast);refreshIcons();setTimeout(()=>{toast.classList.add('leaving');setTimeout(()=>toast.remove(),200);},2800);}
 function scrollToBottom(force=false){const container=$('messages-container');if(!container)return;const distance=container.scrollHeight-container.scrollTop-container.clientHeight;if(!force&&distance>240)return;requestAnimationFrame(()=>container.scrollTo({top:container.scrollHeight,behavior:force?'auto':'smooth'}));}
@@ -88,33 +88,44 @@ function escapeHtml(text){return String(text??'').replace(/[&<>"']/g,(m)=>({'&':
 var sbTemplate = 'Editorial';
 var sbTone = 'Professional';
 
-function toggleSlideBuilderAccordion(event) {
-  if (event) event.preventDefault();
-  var panel = document.getElementById('slide-builder-panel');
-  if (!panel) return;
-  var isOpen = panel.classList.contains('open');
-  if (isOpen) {
-    panel.classList.remove('open');
-    panel.setAttribute('aria-hidden', 'true');
-  } else {
-    panel.classList.add('open');
-    panel.setAttribute('aria-hidden', 'false');
-    var input = document.getElementById('sb-topic');
-    if (input) input.focus();
-  }
+/* Open/close the inline slide builder accordion */
+function openSFModal(prefillTopic) {
+  openSlideBuilder(null, prefillTopic);
 }
 
-function openSlideBuilder(event) {
-  toggleSlideBuilderAccordion(event);
+function closeSFModal() {
+  closeSlideBuilder();
+}
+
+function toggleSlideBuilderAccordion(event) {
+  openSlideBuilder(event);
+}
+
+function openSlideBuilder(event, prefillTopic) {
+  if (event) event.preventDefault();
+  var panel = document.getElementById('sf-modal');
+  if (!panel) return;
+  var shouldOpen = Boolean(prefillTopic) || !panel.classList.contains('open');
+  panel.classList.toggle('open', shouldOpen);
+  panel.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+  $('pill-slides')?.classList.toggle('active', shouldOpen);
+  var input = document.getElementById('sb-topic');
+  if (input && prefillTopic) input.value = prefillTopic;
+  var btn = document.getElementById('sb-generate-btn');
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="sparkles"></i><span>Generate Presentation</span>'; }
+  refreshIcons();
+  if (shouldOpen) setTimeout(function () { if (input) input.focus(); }, 120);
 }
 
 function closeSlideBuilder() {
-  var panel = document.getElementById('slide-builder-panel');
+  var panel = document.getElementById('sf-modal');
   if (panel) {
     panel.classList.remove('open');
     panel.setAttribute('aria-hidden', 'true');
   }
+  $('pill-slides')?.classList.remove('active');
 }
+
 
 function setSBTopic(btn) {
   var input = document.getElementById('sb-topic');
@@ -142,11 +153,15 @@ async function generatePresentation() {
 
   var slideCount = parseInt((document.getElementById('sb-slide-count') || {}).value || '10', 10);
   var btn = document.getElementById('sb-generate-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Initializing...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-circle"></i><span>Initializing...</span>'; refreshIcons(); }
 
-  closeSlideBuilder();
-  startNewChat();
-  appendMessage('user', 'Create a presentation: ' + topic + ' (' + slideCount + ' slides, ' + sbTemplate + ' template)');
+  closeSFModal();
+  // Show messages container without clearing existing chat
+  var welcomeEl = document.getElementById('welcome-screen');
+  var msgEl = document.getElementById('messages-container');
+  if (welcomeEl) welcomeEl.classList.add('hidden');
+  if (msgEl) msgEl.classList.remove('hidden');
+  appendMessage('user', 'Create a presentation: ' + topic + ' (' + slideCount + ' slides, ' + sbTemplate + ' template, ' + sbTone + ' tone)');
 
   // 1. Append Assistant Progress Tracker Placeholder
   const trackerId = 'tracker-' + Date.now();
@@ -160,62 +175,13 @@ async function generatePresentation() {
       <span>Generating</span>
     </div>
     <div class="message-bubble">
-      <div class="message-content">
-        <!-- Sticky Tracker Card -->
-        <div class="task-tracker-card bg-[#151c2c] text-slate-100 p-5 rounded-2xl border border-white/10 space-y-4 my-2 shadow-2xl">
-          <h4 class="font-bold text-sm text-cyan-400 flex items-center gap-2">
-            <i class="fas fa-magic"></i> Live Presentation Construction
-          </h4>
-          
-          <div class="space-y-3.5">
-            <!-- Step 1: Research -->
-            <div id="step-research" class="flex items-center justify-between text-xs text-slate-400">
-              <div class="flex items-center space-x-2.5">
-                <span class="step-status-icon text-cyan-400 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
-                <span class="font-semibold text-slate-300">1. Real-time Web Research</span>
-              </div>
-              <span class="step-timer text-[10px] font-mono">0.0s</span>
-            </div>
-            <div id="status-research-details" class="text-[11px] text-slate-500 pl-7 italic">Waiting to search...</div>
-
-            <!-- Step 2: Outline -->
-            <div id="step-outline" class="flex items-center justify-between text-xs text-slate-400">
-              <div class="flex items-center space-x-2.5">
-                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
-                <span class="font-semibold text-slate-500">2. Slide Outline Generation</span>
-              </div>
-              <span class="step-timer text-[10px] font-mono">0.0s</span>
-            </div>
-            <div id="status-outline-details" class="text-[11px] text-slate-400 pl-7 hidden space-y-1 py-1"></div>
-
-            <!-- Step 3: Generating -->
-            <div id="step-generating" class="flex items-center justify-between text-xs text-slate-400">
-              <div class="flex items-center space-x-2.5">
-                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
-                <span class="font-semibold text-slate-500">3. Live Slide Construction</span>
-              </div>
-              <span class="step-timer text-[10px] font-mono">0.0s</span>
-            </div>
-            <div id="status-generating-details" class="text-[11px] text-slate-400 pl-7 hidden font-semibold text-cyan-400 mb-1">0 / 0 slides generated</div>
-            
-            <!-- Live Grid of Slides -->
-            <div id="live-slides-container" class="grid grid-cols-2 gap-3 pl-7 mt-3 hidden"></div>
-
-            <!-- Step 4: Deliver -->
-            <div id="step-deliver" class="flex items-center justify-between text-xs text-slate-400">
-              <div class="flex items-center space-x-2.5">
-                <span class="step-status-icon text-slate-600 flex items-center justify-center w-5 h-5"><i data-lucide="clock" class="w-4 h-4"></i></span>
-                <span class="font-semibold text-slate-500">4. Final PPTX Compilation</span>
-              </div>
-              <span class="step-timer text-[10px] font-mono">0.0s</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="message-content"></div>
     </div>
   `;
-  $('messages-container').appendChild(wrapper);
-  refreshIcons();
+  const trackerTemplate = document.getElementById('agentic-tracker-template');
+  const trackerContent = trackerTemplate ? trackerTemplate.content.cloneNode(true) : document.createTextNode('Preparing presentation...');
+  wrapper.querySelector('.message-content').appendChild(trackerContent);
+  $('messages-container').appendChild(wrapper);  refreshIcons();
   scrollToBottom();
 
   // Timer variables
@@ -233,24 +199,21 @@ async function generatePresentation() {
     activeStep = stepId;
     const stepEl = wrapper.querySelector(`#step-${stepId}`);
     if (!stepEl) return;
-    
-    stepEl.classList.remove('text-slate-400');
-    const label = stepEl.querySelector('span.font-semibold');
-    if (label) label.className = "font-bold text-slate-200";
+    stepEl.classList.add('active');
+    stepEl.classList.remove('complete');
     const statusIcon = stepEl.querySelector('.step-status-icon');
-    if (statusIcon) statusIcon.innerHTML = `<span class="thinking-badge" style="background:#06B6D4;box-shadow:0 0 0 4px rgba(6,182,212,0.25);margin-right:4px"></span>`;
+    if (statusIcon) statusIcon.innerHTML = `<span class="thinking-badge"></span>`;
   }
 
   function setStepCompleted(stepId) {
     const stepEl = wrapper.querySelector(`#step-${stepId}`);
     if (!stepEl) return;
-    
-    const label = stepEl.querySelector('span.font-semibold, span.font-bold');
-    if (label) label.className = "font-semibold text-slate-400 line-through opacity-75";
+    stepEl.classList.remove('active');
+    stepEl.classList.add('complete');
     const statusIcon = stepEl.querySelector('.step-status-icon');
-    if (statusIcon) statusIcon.innerHTML = `<span class="text-emerald-500 font-bold" style="font-size:14px;margin-right:2px">✓</span>`;
+    if (statusIcon) statusIcon.innerHTML = `<i data-lucide="check"></i>`;
+    refreshIcons();
   }
-
   setStepActive('research');
 
   try {
@@ -293,7 +256,7 @@ async function generatePresentation() {
             if (payload.query) {
               wrapper.querySelector('#status-research-details').textContent = `Searching: "${payload.query}"...`;
             } else if (payload.status === 'completed') {
-              wrapper.querySelector('#status-research-details').innerHTML = `<span class="text-emerald-400">Research Complete.</span> Synthesized findings.`;
+              wrapper.querySelector('#status-research-details').innerHTML = `<strong>Research complete.</strong> Synthesized findings.`;
               setStepCompleted('research');
               setStepActive('outline');
             }
@@ -304,7 +267,7 @@ async function generatePresentation() {
             if (outlineDetails && payload.slides) {
               outlineDetails.classList.remove('hidden');
               outlineDetails.innerHTML = payload.slides.map(s => 
-                `<div class="text-[10px] text-slate-400"><b class="text-slate-300">Slide ${s.slide_number}:</b> ${escapeHtml(s.title)}</div>`
+                `<div><strong>Slide ${s.slide_number}:</strong> ${escapeHtml(s.title)}</div>`
               ).join('');
             }
           }
@@ -322,8 +285,8 @@ async function generatePresentation() {
             const slideContainer = wrapper.querySelector('#live-slides-container');
             if (slideContainer && payload.slide_html) {
               const div = document.createElement('div');
-              div.className = 'slide-preview-wrapper scale-[0.9] origin-top-left transition-all duration-300 transform';
-              div.style.marginBottom = "-12px"; 
+              div.className = 'slide-preview-wrapper';
+
               div.innerHTML = payload.slide_html;
               slideContainer.appendChild(div);
               scrollToBottom();
@@ -347,8 +310,8 @@ async function generatePresentation() {
             wrapper.querySelector('#live-slides-container').classList.add('hidden');
             
             const doneNode = document.createElement('div');
-            doneNode.className = "mt-4 border-t border-white/10 pt-4";
-            doneNode.innerHTML = `<p class="text-sm font-semibold mb-2">Your presentation is ready! 🎉</p>${finalCard}`;
+            doneNode.className = "presentation-done";
+            doneNode.innerHTML = `<p>Your presentation is ready.</p>${finalCard}`;
             messageBubble.appendChild(doneNode);
             
             wrapper.classList.remove('streaming');
@@ -367,13 +330,13 @@ async function generatePresentation() {
     const messageBubble = wrapper.querySelector('.message-content');
     if (messageBubble) {
       const errNode = document.createElement('div');
-      errNode.className = "mt-3 text-xs text-red-400 font-semibold";
-      errNode.textContent = `⚠️ Presentation build failed: ${error.message}`;
+      errNode.className = "tracker-error";
+      errNode.textContent = `Presentation build failed: ${error.message}`;
       messageBubble.appendChild(errNode);
     }
     showToast(`Generation failed: ${error.message}`, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✨ Generate Presentation'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="sparkles"></i><span>Generate Presentation</span>'; refreshIcons(); }
   }
 }
 
@@ -445,7 +408,7 @@ function renderProjectList() {
   var list = document.getElementById('conversations-list');
   if (!list) return;
   if (!projectsCache.length) {
-    list.innerHTML = '<div class="empty-history"><div>No presentations yet.</div><button class="sample-prompt-btn" style="margin-top:8px" onclick="openSlideBuilder()">+ Create one</button></div>';
+    list.innerHTML = '<div class="empty-history"><div>No presentations yet.</div><button class="sample-prompt-btn" style="margin-top:8px" onclick="openSFModal()">+ Create one</button></div>';
     return;
   }
   list.innerHTML = projectsCache.map(function (p) {
@@ -579,7 +542,7 @@ function initActionPills() {
     });
   });
 
-  // Close menus/subpanels on document click
+  // Close menus/subpanels on document click (but NOT inside the SF modal)
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.action-pill') && !e.target.closest('.pill-subpanel') && !e.target.closest('.pill-more-menu') && !e.target.closest('.sb-accordion')) {
       // Hide all subpanels
@@ -597,6 +560,7 @@ function initActionPills() {
       }
       $('pill-more')?.classList.remove('open');
     }
+
   });
 }
 
@@ -613,6 +577,18 @@ function handlePillClick(pillId) {
   document.querySelectorAll('.action-pill').forEach(p => {
     if (p.dataset.pill !== pillId) p.classList.remove('active');
   });
+
+  // Special case: slides pill opens the inline accordion
+  if (pillId === 'slides') {
+    // Close any open subpanels first
+    document.querySelectorAll('.pill-subpanel').forEach(function(p) {
+      p.classList.remove('open');
+      p.setAttribute('aria-hidden', 'true');
+    });
+    document.querySelectorAll('.action-pill').forEach(function(p) { p.classList.remove('active'); });
+    openSlideBuilder();
+    return;
+  }
 
   if (pillId === 'more') {
     const menu = $('pill-more-menu');
@@ -656,25 +632,7 @@ function handlePillClick(pillId) {
 }
 
 function handleSlideCardClick(topic) {
-  // Close slides subpanel
-  const subpanel = $('subpanel-slides');
-  if (subpanel) {
-    subpanel.classList.remove('open');
-    subpanel.setAttribute('aria-hidden', 'true');
-  }
-  $('pill-slides')?.classList.remove('active');
-
-  // Toggle slide builder
-  var panel = document.getElementById('slide-builder-panel');
-  if (panel) {
-    panel.classList.add('open');
-    panel.setAttribute('aria-hidden', 'false');
-  }
-  var input = document.getElementById('sb-topic');
-  if (input) {
-    input.value = topic;
-    input.focus();
-  }
+  openSlideBuilder(null, topic);
 }
 
 function fillComposerPrompt(text) {
@@ -708,4 +666,42 @@ function renderWelcomeProjects() {
   }).join('');
 }
 
+
+
+/* Billing UI */
+async function loadBillingStatus() {
+  try {
+    const res = await fetch('/api/billing/status');
+    if (!res.ok) return null;
+    const billing = await res.json();
+    updateBillingBadge(billing);
+    return billing;
+  } catch (e) {
+    return null;
+  }
+}
+
+function updateBillingBadge(billing) {
+  const badge = $('billing-badge');
+  const label = $('billing-plan-label');
+  if (!badge || !billing) return;
+  const plan = billing.plan || 'Free';
+  if (label) label.textContent = plan + ' plan';
+  badge.classList.toggle('limit-reached', !!billing.limit_reached);
+}
+
+function openBillingSettings() {
+  openModal('settings-modal');
+  activateSettingsTab('billing');
+  loadBillingStatus();
+  if (window.OmniSettings && typeof window.OmniSettings.loadBilling === 'function') window.OmniSettings.loadBilling();
+}
+
+function showLimitExceededWarning(billing) {
+  $('welcome-screen')?.classList.add('hidden');
+  $('messages-container')?.classList.remove('hidden');
+  const used = billing?.message_count ?? 0;
+  const limit = billing?.message_limit ?? 'your';
+  appendMessage('assistant', `<div class="limit-warning-card"><strong>Free plan limit reached</strong><p>You have used ${used} of ${limit} monthly messages. Upgrade to continue chatting.</p><button class="st-save-btn" type="button" onclick="openBillingSettings()">Upgrade plan</button></div>`);
+}
 

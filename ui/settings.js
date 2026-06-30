@@ -390,18 +390,77 @@
   function bindIntegrations() {
     var panel = document.querySelector('[data-panel="integrations"]');
     if (!panel) return;
-    panel.addEventListener('click', function (e) {
+    panel.addEventListener('click', async function (e) {
       var btn = e.target.closest('.connect-btn');
       if (!btn) return;
       var key = btn.closest('.integration-item') && btn.closest('.integration-item').dataset.integration;
       if (!key) return;
-      S.integrations[key] = !S.integrations[key];
-      saveSettings();
-      renderIntegrationList();
-      var name = key.charAt(0).toUpperCase() + key.slice(1);
-      toast(S.integrations[key] ? name + ' connected' : name + ' disconnected',
-            S.integrations[key] ? 'success' : 'info');
+
+      var isConnected = S.integrations[key] || false;
+
+      if (isConnected) {
+        // Disconnect integration
+        if (!confirm('Disconnect ' + key.toUpperCase() + ' integration?')) return;
+        btn.disabled = true;
+        btn.textContent = 'Disconnecting…';
+        try {
+          var res = await fetch('/api/integrations/' + key + '/disconnect', { method: 'DELETE' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          S.integrations[key] = false;
+          saveSettings();
+          renderIntegrationList();
+          toast(key.charAt(0).toUpperCase() + key.slice(1) + ' disconnected', 'info');
+        } catch (err) {
+          toast('Disconnect failed: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Connect';
+        }
+      } else {
+        // Connect integration
+        if (key === 'gmail') {
+          // Open pop-up for Gmail OAuth
+          var width = 550, height = 650;
+          var left = (screen.width / 2) - (width / 2);
+          var top = (screen.height / 2) - (height / 2);
+          var popup = window.open('/api/integrations/gmail/connect', 'GmailConnect', 'width=' + width + ',height=' + height + ',top=' + top + ',left=' + left);
+          
+          window.addEventListener('message', function receiveMsg(event) {
+            if (event.data && event.data.type === 'integration_success' && event.data.provider === 'gmail') {
+              window.removeEventListener('message', receiveMsg);
+              S.integrations.gmail = true;
+              saveSettings();
+              renderIntegrationList();
+              toast('Gmail linked successfully!', 'success');
+            } else if (event.data && event.data.type === 'integration_failure' && event.data.provider === 'gmail') {
+              window.removeEventListener('message', receiveMsg);
+              toast('Gmail linking failed: ' + event.data.error, 'error');
+            }
+          });
+        } else {
+          // Other integration shells (Slack, WhatsApp, n8n) - toggle localStorage mock for now
+          S.integrations[key] = true;
+          saveSettings();
+          renderIntegrationList();
+          toast(key.charAt(0).toUpperCase() + key.slice(1) + ' connected', 'success');
+        }
+      }
     });
+    
+    // Initial sync
+    syncIntegrations();
+  }
+
+  async function syncIntegrations() {
+    try {
+      var res = await fetch('/api/integrations/status');
+      if (res.ok) {
+        var data = await res.json();
+        S.integrations = Object.assign({}, S.integrations, data);
+        saveSettings();
+        renderIntegrationList();
+      }
+    } catch (e) { /* silent */ }
   }
 
   /* ─── API Keys Tab ────────────────────────────────────── */
@@ -607,6 +666,8 @@
           populateForm();
           loadActiveModel();
           updateMemoryCount();
+          if (typeof syncIntegrations === 'function') syncIntegrations();
+          loadBilling();
         }, 40);
       });
     }
@@ -633,6 +694,61 @@
     } catch (e) { /* silent */ }
   }
 
+
+  /* ─── Billing Tab ────────────────────────────────────── */
+  async function loadBilling() {
+    var status = el('billing-connection-status');
+    try {
+      var res = await fetch('/api/billing/status');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      var plan = data.plan || 'Free';
+      var current = el('billing-current-plan');
+      var usage = el('billing-usage-label');
+      var badge = el('billing-status-badge');
+      var topLabel = el('billing-plan-label');
+      var topBadge = el('billing-badge');
+      if (current) current.textContent = plan + ' plan';
+      if (usage) usage.textContent = data.message_limit ? (data.message_count + ' of ' + data.message_limit + ' monthly messages used') : 'Unlimited plan usage';
+      if (badge) badge.textContent = data.limit_reached ? 'Limit reached' : (data.status || 'Active');
+      if (topLabel) topLabel.textContent = plan + ' plan';
+      if (topBadge) topBadge.classList.toggle('limit-reached', !!data.limit_reached);
+      if (status) status.textContent = '';
+      return data;
+    } catch (err) {
+      if (status) status.textContent = 'Billing status unavailable: ' + err.message;
+      return null;
+    }
+  }
+
+  function bindBilling() {
+    var btn = el('billing-upgrade-pro');
+    if (btn) {
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        btn.textContent = 'Opening Stripe...';
+        var status = el('billing-connection-status');
+        if (status) status.textContent = '';
+        try {
+          var res = await fetch('/api/billing/create-checkout-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: 'pro' }),
+          });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok) throw new Error(data.detail || 'HTTP ' + res.status);
+          location.href = data.checkout_url;
+        } catch (err) {
+          if (status) status.textContent = err.message;
+          toast('Checkout unavailable: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Upgrade with Stripe';
+        }
+      });
+    }
+    loadBilling();
+  }
   /* ─── Init ────────────────────────────────────────────── */
   function init() {
     loadSettings();
@@ -643,6 +759,7 @@
     bindMemory();
     bindSandbox();
     bindIntegrations();
+    bindBilling();
     bindApiKeys();
     bindDeveloper();
     bindPrivacy();
@@ -656,5 +773,11 @@
     get:    function () { return JSON.parse(JSON.stringify(S)); },
     save:   saveSettings,
     reload: function () { loadSettings(); populateForm(); },
+    loadBilling: loadBilling,
   };
 })();
+
+
+
+
+

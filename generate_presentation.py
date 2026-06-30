@@ -456,7 +456,7 @@ def generate_presentation_stream(
     except Exception:
         results2 = []
         
-    search_context = format_search_for_context(results1 + results2)
+    search_context = format_search_for_context(results1) + "\n\n" + format_search_for_context(results2)
     yield json.dumps({
         "type": "progress",
         "phase": "researching",
@@ -587,10 +587,15 @@ CRITICAL RULES:
     yield json.dumps({
         "type": "progress",
         "phase": "done",
+        "id": pres.id,
         "project_id": pres.id,
         "file_path": file_path,
         "title": pres.title,
-        "slides": slides_data
+        "topic": pres.topic,
+        "template": pres.template,
+        "slide_count": pres.slide_count,
+        "created_at": pres.created_at.isoformat() if pres.created_at else None,
+        "slides": slides_data,
     })
 
 
@@ -613,3 +618,6 @@ if __name__ == "__main__":
     )
     print("Generated:", result["file_path"])
     print("Slides:", len(result["slides_json"]))
+
+
+

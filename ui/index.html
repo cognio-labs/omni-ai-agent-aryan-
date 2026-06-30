@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;600;700&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260630-phase2-codeblock-v2" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260630-sandbox-spacing-v3" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
@@ -48,6 +48,7 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <button id="billing-badge" class="billing-badge" type="button" title="Billing"><span id="billing-plan-label">Free plan</span><span>Upgrade</span></button>
           <button id="settings-btn" class="icon-btn" type="button" aria-label="Settings" title="Settings"><i data-lucide="settings"></i></button>
           <button id="more-btn" class="icon-btn" type="button" aria-label="More actions" title="More"><i data-lucide="ellipsis"></i></button>
           <button id="user-avatar" class="avatar-btn" type="button" aria-label="User profile">U</button>
@@ -84,6 +85,41 @@
             </button>
           </div>
 
+          <div id="sf-modal" class="sb-accordion" aria-hidden="true">
+            <div class="slide-builder-header">
+              <div class="sf-modal-title">
+                <i data-lucide="presentation"></i>
+                <span>What would you like to present?</span>
+              </div>
+              <button class="icon-btn" type="button" id="sf-close-btn" onclick="closeSFModal()" aria-label="Close slide builder">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <textarea id="sb-topic" placeholder="Describe your presentation topic... e.g. 'AI in Healthcare' or 'Q3 Marketing Strategy'" rows="3"></textarea>
+            <div class="sample-prompts">
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">AI in Healthcare</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">SaaS Marketing Strategy</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Startup Pitch Deck</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">E-commerce Growth Plan</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Product Roadmap</button>
+              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Competitor Analysis</button>
+            </div>
+            <div class="sb-section-title">Select Design Template</div>
+            <div class="template-grid" id="sb-template-grid">
+              <div class="template-card selected" data-template="Editorial" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #1e293b, #f1f5f9)"></div><div class="tc-name">Editorial</div></div>
+              <div class="template-card" data-template="Pixel" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #f43f5e, #10b981)"></div><div class="tc-name">Pixel</div></div>
+              <div class="template-card" data-template="Vellum" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #d97706, #fef3c7)"></div><div class="tc-name">Vellum</div></div>
+              <div class="template-card" data-template="Sketch" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #0284c7, #e0f2fe)"></div><div class="tc-name">Sketch</div></div>
+              <div class="template-card" data-template="Whiteboard" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #111827, #f9fafb)"></div><div class="tc-name">Whiteboard</div></div>
+              <div class="template-card" data-template="Minimal" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #6b7280, #f3f4f6)"></div><div class="tc-name">Minimal</div></div>
+              <div class="template-card" data-template="Corporate" onclick="selectSBTemplate(this)"><div class="tc-swatch" style="background: linear-gradient(135deg, #1e3a8a, #3b82f6)"></div><div class="tc-name">Corporate</div></div>
+            </div>
+            <div class="sb-options-row">
+              <div class="sb-option-group"><span class="sb-option-label">Slide Count</span><select id="sb-slide-count" class="sb-count-select"><option value="5">4-6 slides</option><option value="10" selected>8-12 slides</option><option value="15">12-18 slides</option></select></div>
+              <div class="sb-option-group"><span class="sb-option-label">Tone</span><div class="sb-tone-selector"><button type="button" class="sb-tone-btn active" data-tone="Professional" onclick="selectSBTone(this)">Professional</button><button type="button" class="sb-tone-btn" data-tone="Casual" onclick="selectSBTone(this)">Casual</button><button type="button" class="sb-tone-btn" data-tone="Academic" onclick="selectSBTone(this)">Academic</button></div></div>
+            </div>
+            <div class="slide-builder-actions"><button id="sb-generate-btn" class="sb-generate-btn" type="button" onclick="generatePresentation()"><i data-lucide="sparkles"></i><span>Generate Presentation</span></button></div>
+          </div>
           <!-- More Dropdown -->
           <div id="pill-more-menu" class="pill-more-menu" aria-hidden="true">
             <button class="pill-more-item" type="button" data-action="video"><i data-lucide="video"></i>Video</button>
@@ -109,19 +145,6 @@
               <button class="subopt-card" type="button" data-prompt="Build a SaaS product website with pricing tiers, feature comparison, testimonials, and sign-up flow. Include full implementation."><i data-lucide="rocket"></i>SaaS</button>
               <button class="subopt-card" type="button" data-prompt="Create a link-in-bio page with social links, featured content, and profile section. Make it visually stunning and mobile-optimized."><i data-lucide="link"></i>Link-in-bio</button>
               <button class="subopt-card" type="button" data-prompt="Build a modern blog website with article listing, category filters, featured post hero, and clean reading experience."><i data-lucide="book-open"></i>Blog</button>
-            </div>
-          </div>
-
-          <!-- SLIDES sub-options (uses existing slide builder) -->
-          <div id="subpanel-slides" class="pill-subpanel" aria-hidden="true">
-            <div class="subpanel-header"><span>📊 What would you like to present?</span><button class="subpanel-close icon-btn" type="button" data-close="slides"><i data-lucide="x"></i></button></div>
-            <div class="subpanel-options">
-              <button class="subopt-card" type="button" data-open-sb="Business review"><i data-lucide="bar-chart-3"></i>Business review</button>
-              <button class="subopt-card" type="button" data-open-sb="Competitor analysis"><i data-lucide="git-compare"></i>Competitor analysis</button>
-              <button class="subopt-card" type="button" data-open-sb="Status report"><i data-lucide="clipboard-list"></i>Status report</button>
-              <button class="subopt-card" type="button" data-open-sb="Pitch deck"><i data-lucide="rocket"></i>Pitch deck</button>
-              <button class="subopt-card" type="button" data-open-sb="Product roadmap"><i data-lucide="map"></i>Product roadmap</button>
-              <button class="subopt-card" type="button" data-open-sb="Marketing strategy"><i data-lucide="megaphone"></i>Marketing strategy</button>
             </div>
           </div>
 
@@ -151,83 +174,6 @@
             </div>
           </div>
 
-          <!-- Slide Builder Accordion (opened from slides subpanel) -->
-          <div id="slide-builder-panel" class="sb-accordion" aria-hidden="true">
-            <div class="slide-builder-header">
-              <h3>📊 What would you like to present?</h3>
-              <button type="button" class="icon-btn" onclick="toggleSlideBuilderAccordion(event)" title="Close">✕</button>
-            </div>
-            
-            <textarea id="sb-topic" placeholder="Describe your presentation topic... e.g. 'AI in Healthcare' or 'Marketing strategy for SaaS startups'" rows="3"></textarea>
-            
-            <!-- Sample prompts -->
-            <div class="sample-prompts">
-              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">AI in Healthcare</button>
-              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">SaaS Marketing Strategy</button>
-              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">Startup Pitch Deck</button>
-              <button class="sample-prompt-btn" type="button" onclick="setSBTopic(this)">E-commerce Growth Plan</button>
-            </div>
-
-            <!-- Template Grid -->
-            <div class="sb-section-title">Select Design Template</div>
-            <div class="template-grid" id="sb-template-grid">
-              <div class="template-card selected" data-template="Editorial" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #1e293b, #f1f5f9)"></div>
-                <div class="tc-name">Editorial</div>
-              </div>
-              <div class="template-card" data-template="Pixel" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #f43f5e, #10b981)"></div>
-                <div class="tc-name">Pixel</div>
-              </div>
-              <div class="template-card" data-template="Vellum" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #d97706, #fef3c7)"></div>
-                <div class="tc-name">Vellum</div>
-              </div>
-              <div class="template-card" data-template="Sketch" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #0284c7, #e0f2fe)"></div>
-                <div class="tc-name">Sketch</div>
-              </div>
-              <div class="template-card" data-template="Whiteboard" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #111827, #f9fafb)"></div>
-                <div class="tc-name">Whiteboard</div>
-              </div>
-              <div class="template-card" data-template="Minimal" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #6b7280, #f3f4f6)"></div>
-                <div class="tc-name">Minimal</div>
-              </div>
-              <div class="template-card" data-template="Corporate" onclick="selectSBTemplate(this)">
-                <div class="tc-swatch" style="background: linear-gradient(135deg, #1e3a8a, #3b82f6)"></div>
-                <div class="tc-name">Corporate</div>
-              </div>
-            </div>
-
-            <!-- Slide Count and Tone Row -->
-            <div class="sb-options-row">
-              <div class="sb-option-group">
-                <span class="sb-option-label">Slide Count</span>
-                <select id="sb-slide-count" class="sb-count-select">
-                  <option value="5">4-6 slides</option>
-                  <option value="10" selected>8-12 slides</option>
-                  <option value="15">12-18 slides</option>
-                </select>
-              </div>
-
-              <div class="sb-option-group">
-                <span class="sb-option-label">Tone</span>
-                <div class="sb-tone-selector">
-                  <button type="button" class="sb-tone-btn active" data-tone="Professional" onclick="selectSBTone(this)">Professional</button>
-                  <button type="button" class="sb-tone-btn" data-tone="Casual" onclick="selectSBTone(this)">Casual</button>
-                  <button type="button" class="sb-tone-btn" data-tone="Academic" onclick="selectSBTone(this)">Academic</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Actions Row -->
-            <div class="slide-builder-actions">
-              <button id="sb-generate-btn" class="sb-generate-btn" type="button" onclick="generatePresentation()">✨ Generate Presentation</button>
-            </div>
-          </div>
-
           <!-- Your Projects mini gallery -->
           <div id="welcome-projects" class="welcome-projects" style="display:none">
             <div class="welcome-projects-header">
@@ -236,8 +182,6 @@
             </div>
             <div id="welcome-projects-list" class="welcome-projects-list"></div>
           </div>
-          </div><!-- end welcome-projects -->
-
         </div><!-- end welcome-inner -->
       </section><!-- end welcome-screen -->
 
@@ -265,7 +209,7 @@
 
   <div id="command-overlay" class="overlay" role="dialog" aria-modal="true" aria-label="Command palette"><div class="command-palette"><div class="command-input-row"><i data-lucide="search"></i><input id="command-input" type="search" placeholder="Search agents, chats, projects, files, settings, commands..." /><kbd>Esc</kbd></div><div id="command-results" class="command-results"></div></div></div>
 
-  <div id="settings-modal-overlay" class="modal-overlay"><div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings"><div class="modal-header"><h2>Settings</h2><button id="close-settings-btn" class="icon-btn" type="button" aria-label="Close settings"><i data-lucide="x"></i></button></div><div class="settings-layout"><div class="settings-tabs" role="tablist"><button class="settings-tab active" type="button" data-tab="general">General</button><button class="settings-tab" type="button" data-tab="appearance">Appearance</button><button class="settings-tab" type="button" data-tab="models">Models</button><button class="settings-tab" type="button" data-tab="memory">Memory</button><button class="settings-tab" type="button" data-tab="sandbox">Sandbox</button><button class="settings-tab" type="button" data-tab="integrations">Integrations</button><button class="settings-tab" type="button" data-tab="api-keys">API Keys</button><button class="settings-tab" type="button" data-tab="developer">Developer</button><button class="settings-tab" type="button" data-tab="privacy">Privacy</button><button class="settings-tab" type="button" data-tab="about">About</button></div><div class="settings-content">
+  <div id="settings-modal-overlay" class="modal-overlay"><div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings"><div class="modal-header"><h2>Settings</h2><button id="close-settings-btn" class="icon-btn" type="button" aria-label="Close settings"><i data-lucide="x"></i></button></div><div class="settings-layout"><div class="settings-tabs" role="tablist"><button class="settings-tab active" type="button" data-tab="general">General</button><button class="settings-tab" type="button" data-tab="billing">Billing</button><button class="settings-tab" type="button" data-tab="appearance">Appearance</button><button class="settings-tab" type="button" data-tab="models">Models</button><button class="settings-tab" type="button" data-tab="memory">Memory</button><button class="settings-tab" type="button" data-tab="sandbox">Sandbox</button><button class="settings-tab" type="button" data-tab="integrations">Integrations</button><button class="settings-tab" type="button" data-tab="api-keys">API Keys</button><button class="settings-tab" type="button" data-tab="developer">Developer</button><button class="settings-tab" type="button" data-tab="privacy">Privacy</button><button class="settings-tab" type="button" data-tab="about">About</button></div><div class="settings-content">
 
     <section class="settings-panel active" data-panel="general">
       <h3>General</h3>
@@ -293,6 +237,30 @@
         </div>
       </div>
       <button id="st-general-save" class="st-save-btn" type="button">Save changes</button>
+    </section>
+
+
+    <section class="settings-panel" data-panel="billing">
+      <h3>Billing</h3>
+      <div class="billing-summary-card">
+        <div><div class="setting-label" id="billing-current-plan">Free plan</div><div class="setting-desc" id="billing-usage-label">Loading usage...</div></div>
+        <span class="status-badge connected" id="billing-status-badge">Active</span>
+      </div>
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <div class="pricing-title">Free</div>
+          <div class="pricing-price">$0</div>
+          <p>Local workspace access with a monthly chat allowance.</p>
+          <button class="st-action-btn" type="button" disabled>Current plan</button>
+        </div>
+        <div class="pricing-card featured">
+          <div class="pricing-title">Pro</div>
+          <div class="pricing-price">Upgrade</div>
+          <p>Higher usage limits for production research, chat, and generation workflows.</p>
+          <button id="billing-upgrade-pro" class="st-save-btn" type="button">Upgrade with Stripe</button>
+        </div>
+      </div>
+      <p id="billing-connection-status" class="setting-desc"></p>
     </section>
 
     <section class="settings-panel" data-panel="appearance">
@@ -475,9 +443,27 @@
     <iframe id="slides-modal-frame" class="slides-modal-frame" title="Presentation preview" src="about:blank"></iframe>
   </div>
 
+  <template id="agentic-tracker-template">
+    <div class="task-tracker-card">
+      <div class="tracker-heading"><i data-lucide="wand-sparkles"></i><span>Live Presentation Construction</span></div>
+      <div class="tracker-steps">
+        <div id="step-research" class="tracker-step"><div class="tracker-step-main"><span class="step-status-icon"><i data-lucide="clock"></i></span><span class="tracker-step-label">1. Real-time Web Research</span></div><span class="step-timer">0.0s</span></div>
+        <div id="status-research-details" class="tracker-detail">Waiting to search...</div>
+        <div id="step-outline" class="tracker-step"><div class="tracker-step-main"><span class="step-status-icon"><i data-lucide="clock"></i></span><span class="tracker-step-label">2. Slide Outline Generation</span></div><span class="step-timer">0.0s</span></div>
+        <div id="status-outline-details" class="tracker-detail hidden"></div>
+        <div id="step-generating" class="tracker-step"><div class="tracker-step-main"><span class="step-status-icon"><i data-lucide="clock"></i></span><span class="tracker-step-label">3. Live Slide Construction</span></div><span class="step-timer">0.0s</span></div>
+        <div id="status-generating-details" class="tracker-detail hidden">0 / 0 slides generated</div>
+        <div id="step-deliver" class="tracker-step"><div class="tracker-step-main"><span class="step-status-icon"><i data-lucide="clock"></i></span><span class="tracker-step-label">4. Packaging PPTX</span></div><span class="step-timer">0.0s</span></div>
+      </div>
+      <div id="live-slides-container" class="live-slides-grid hidden"></div>
+    </div>
+  </template>
+
   <div id="toast-container" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260630-phase1-v1"></script>
+  <script src="/static/app.js?v=20260630-sfmodal-v4"></script>
   <script src="/static/settings.js?v=20260630-phase1-v1"></script>
 </body>
 </html>
+
+
 

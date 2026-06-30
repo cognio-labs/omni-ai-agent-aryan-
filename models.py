@@ -116,3 +116,17 @@ class Integration(Base):
     tokens_json = Column(Text, nullable=False) # encrypted tokens
     connected_at = Column(DateTime, default=datetime.utcnow)
 
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_key = Column(String(100), nullable=False, unique=True, default="default")
+    plan = Column(String(50), nullable=False, default="Free")
+    status = Column(String(50), nullable=False, default="active")
+    stripe_customer_id = Column(String(255), default="")
+    stripe_subscription_id = Column(String(255), default="")
+    current_period_end = Column(DateTime, nullable=True)
+    monthly_message_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
