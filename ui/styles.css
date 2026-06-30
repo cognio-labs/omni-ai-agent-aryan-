@@ -136,6 +136,7 @@ pre[class*='language-'] { margin: 0 !important; max-height: 460px; border-radius
 .composer-icon { width: 42px; height: 42px; min-width: 42px; display: grid; place-items: center; border-radius: 15px; background: transparent; color: var(--muted); }
 .composer-icon:hover { background: var(--surface-soft); color: var(--text); }
 #message-input { flex: 1; min-width: 80px; min-height: 42px; max-height: 320px; padding: 10px 8px; border: 0; outline: 0; resize: none; color: var(--text); background: transparent; line-height: 1.55; }
+#message-input:focus, #message-input:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }
 #message-input::placeholder { color: var(--faint); }
 .agent-menu-wrap { position: relative; }
 .agent-select-btn { height: 42px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 15px; color: var(--muted); background: var(--surface-soft); font-weight: 650; }
